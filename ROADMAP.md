@@ -42,7 +42,7 @@ Last updated: 2026-07-10
 ## Shell polish
 
 - [x] Add pane-level refresh and status messaging.
-- [ ] Add better safe-mode and degraded-capability explanations in the UI.
+- [x] Add better safe-mode and degraded-capability explanations in the UI.
 - [ ] Fix terminal shutdown so quitting never leaves mouse/escape garbage printed.
 - [ ] Reduce tab-switch/render lag under repeated redraws.
 

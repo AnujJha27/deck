@@ -852,6 +852,41 @@ std::string market_provider_label(bool has_local_quotes, bool has_finnhub) {
   return "none";
 }
 
+std::vector<std::string> capability_notes_for(const WorkspaceRuntimeState& runtime,
+                                              const EnvironmentCapabilities& caps,
+                                              TabRole role,
+                                              bool safe_mode) {
+  std::vector<std::string> notes;
+  if (safe_mode) {
+    notes.push_back("Safe mode disables the fullscreen shell and background refresh workers.");
+    notes.push_back("Use `deck` without `--safe` for interactive panes, overlays, and periodic quote refresh.");
+  }
+  if (role == TabRole::Dev || role == TabRole::Run) {
+    if (!caps.rg) {
+      notes.push_back("Search is degraded because `rg` is missing from PATH.");
+    }
+  }
+  if (role == TabRole::Review && !caps.git) {
+    notes.push_back("Review actions are degraded because `git` is missing from PATH.");
+  }
+  if (role == TabRole::Finance) {
+    if (!runtime.market_data_enabled) {
+      notes.push_back("Finance quotes are disabled until local quote CSV data or `FINNHUB_API_KEY` is available.");
+    } else if (runtime.market_data_provider == "local-csv") {
+      notes.push_back("Finance quotes currently come from local CSV data only.");
+    } else if (runtime.market_data_provider == "none") {
+      notes.push_back("Finance sources were found, but none currently provide live prices for the watchlist.");
+    }
+    if (runtime.alert_rules.empty()) {
+      notes.push_back("No alerts loaded. Add `.deck/alerts.txt` to enable threshold tracking.");
+    }
+  }
+  if (notes.empty()) {
+    notes.push_back("All required capabilities for this tab are currently available.");
+  }
+  return notes;
+}
+
 std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtime) {
   std::vector<std::string> lines;
   lines.push_back("Focused symbol: " + (runtime.current_market_symbol.empty() ? std::string("none")
@@ -1740,6 +1775,10 @@ Element render_summary(const WorkspacePersistentState& state,
   for (const auto& line : render_doctor_report(caps)) {
     doctor_lines.push_back(text(line));
   }
+  Elements capability_lines;
+  for (const auto& line : capability_notes_for(runtime, caps, current.role, safe_mode)) {
+    capability_lines.push_back(paragraph(wrap_text(line)));
+  }
 
   auto overview = vbox({
       text("deck") | bold | color(Color::Cyan),
@@ -1758,6 +1797,9 @@ Element render_summary(const WorkspacePersistentState& state,
       separator(),
       text("Environment") | bold,
       vbox(std::move(doctor_lines)),
+      separator(),
+      text("Degraded behavior") | bold,
+      vbox(std::move(capability_lines)),
   });
 
   auto current_focus = vbox({

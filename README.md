@@ -34,6 +34,7 @@ This repository now contains:
 - a portfolio summary with tracked totals, cash, market value, and daily change when quotes are available
 - pluggable quote refresh that can use local CSV quote rows before falling back to Finnhub
 - threshold alerts loaded from `.deck/alerts.txt`
+- clearer safe-mode and degraded-capability messaging in the workspace summary
 - legacy SQLite schema for papers, paper tags, and paper bookmarks still present during the product pivot
 - unit-style tests for split tree persistence, workspace persistence, event routing, and `PaperAnchor` serialization
 
