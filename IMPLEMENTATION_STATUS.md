@@ -51,7 +51,6 @@ Last updated: 2026-07-10
 - PTY task execution.
 - Live task log streaming.
 - Interactive file browser actions.
-- Diff navigation.
 - Richer portfolio analytics.
 
 ## Known issues
