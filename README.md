@@ -30,12 +30,14 @@ This repository now contains:
 - context-linked notes for selected files, search results, and finance symbols, stored under `.deck/notes/`
 - a dedicated Notes tab that combines the context-note view with a workspace-local scratchpad backed by `.deck/scratch.md`
 - finance workspace scaffolding with watchlist and local data-source discovery
+- header-driven CSV ingestion for positions and balances
+- a portfolio summary with tracked totals, cash, market value, and daily change when quotes are available
 - legacy SQLite schema for papers, paper tags, and paper bookmarks still present during the product pivot
 - unit-style tests for split tree persistence, workspace persistence, event routing, and `PaperAnchor` serialization
 
 ## What is still scaffolded
 
-PTY task execution and richer finance ingestion/analytics are not fully implemented yet. The core abstractions are in place so those subsystems can be added without reworking the workspace model.
+PTY task execution and richer finance analytics/provider support are not fully implemented yet. The core abstractions are in place so those subsystems can be added without reworking the workspace model.
 
 ## Notes
 
@@ -75,6 +77,7 @@ Inside the Finance tab:
 
 - `a` opens ticker input and persists it to `.deck/watchlist.txt`
 - `x` refreshes quotes when no task is running
+- local `.csv` files with headers like `symbol,quantity,cost_basis_total` or `account,amount,currency` are discovered automatically
 
 ## Build
 

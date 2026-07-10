@@ -510,6 +510,205 @@ std::vector<std::string> discover_finance_sources(const std::filesystem::path& r
   return sources;
 }
 
+std::string lower_copy(std::string value) {
+  std::transform(value.begin(),
+                 value.end(),
+                 value.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return value;
+}
+
+std::string trim_copy(std::string value) {
+  auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
+  value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+  value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+  return value;
+}
+
+std::vector<std::string> split_csv_row(const std::string& row) {
+  std::vector<std::string> cells;
+  std::string current;
+  bool in_quotes = false;
+  for (std::size_t i = 0; i < row.size(); ++i) {
+    const char ch = row[i];
+    if (ch == '"') {
+      if (in_quotes && i + 1 < row.size() && row[i + 1] == '"') {
+        current.push_back('"');
+        ++i;
+      } else {
+        in_quotes = !in_quotes;
+      }
+      continue;
+    }
+    if (ch == ',' && !in_quotes) {
+      cells.push_back(trim_copy(current));
+      current.clear();
+      continue;
+    }
+    current.push_back(ch);
+  }
+  cells.push_back(trim_copy(current));
+  return cells;
+}
+
+std::optional<double> parse_decimal(const std::string& raw) {
+  auto cleaned = trim_copy(raw);
+  cleaned.erase(std::remove(cleaned.begin(), cleaned.end(), '$'), cleaned.end());
+  cleaned.erase(std::remove(cleaned.begin(), cleaned.end(), ','), cleaned.end());
+  cleaned.erase(std::remove(cleaned.begin(), cleaned.end(), '%'), cleaned.end());
+  if (cleaned.empty()) {
+    return std::nullopt;
+  }
+  char* end = nullptr;
+  const auto value = std::strtod(cleaned.c_str(), &end);
+  if (end == cleaned.c_str() || (end != nullptr && *end != '\0')) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+int header_index(const std::vector<std::string>& headers, std::initializer_list<std::string_view> names) {
+  for (std::size_t i = 0; i < headers.size(); ++i) {
+    for (const auto name : names) {
+      if (headers[i] == name) {
+        return static_cast<int>(i);
+      }
+    }
+  }
+  return -1;
+}
+
+std::vector<PositionEntry> load_positions_from_csv(const std::filesystem::path& root,
+                                                   const std::vector<std::string>& sources) {
+  std::vector<PositionEntry> raw_positions;
+  for (const auto& source : sources) {
+    if (std::filesystem::path(source).extension() != ".csv") {
+      continue;
+    }
+    std::ifstream in(root / source);
+    if (!in) {
+      continue;
+    }
+    std::string header_line;
+    if (!std::getline(in, header_line)) {
+      continue;
+    }
+    auto headers = split_csv_row(header_line);
+    for (auto& header : headers) {
+      header = lower_copy(header);
+    }
+    const int symbol_idx = header_index(headers, {"symbol", "ticker", "asset"});
+    const int quantity_idx = header_index(headers, {"quantity", "qty", "shares", "units"});
+    if (symbol_idx < 0 || quantity_idx < 0) {
+      continue;
+    }
+    const int total_cost_idx = header_index(headers, {"cost_basis_total", "total_cost", "book_value", "cost_basis"});
+    const int avg_cost_idx = header_index(headers, {"average_cost", "avg_cost", "cost_per_share", "price"});
+    std::string row;
+    while (std::getline(in, row)) {
+      auto cells = split_csv_row(row);
+      if (symbol_idx >= static_cast<int>(cells.size()) || quantity_idx >= static_cast<int>(cells.size())) {
+        continue;
+      }
+      auto symbol = trim_copy(cells[static_cast<std::size_t>(symbol_idx)]);
+      std::transform(symbol.begin(),
+                     symbol.end(),
+                     symbol.begin(),
+                     [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+      auto quantity = parse_decimal(cells[static_cast<std::size_t>(quantity_idx)]);
+      if (symbol.empty() || !quantity) {
+        continue;
+      }
+      double cost_basis_total = 0.0;
+      if (total_cost_idx >= 0 && total_cost_idx < static_cast<int>(cells.size())) {
+        if (auto total = parse_decimal(cells[static_cast<std::size_t>(total_cost_idx)])) {
+          cost_basis_total = *total;
+        }
+      } else if (avg_cost_idx >= 0 && avg_cost_idx < static_cast<int>(cells.size())) {
+        if (auto avg = parse_decimal(cells[static_cast<std::size_t>(avg_cost_idx)])) {
+          cost_basis_total = (*avg) * (*quantity);
+        }
+      }
+      raw_positions.push_back(PositionEntry{symbol, *quantity, cost_basis_total, source});
+    }
+  }
+
+  std::unordered_map<std::string, PositionEntry> aggregated;
+  for (const auto& entry : raw_positions) {
+    auto& bucket = aggregated[entry.symbol];
+    if (bucket.symbol.empty()) {
+      bucket.symbol = entry.symbol;
+      bucket.source = entry.source;
+    }
+    bucket.quantity += entry.quantity;
+    bucket.cost_basis_total += entry.cost_basis_total;
+  }
+
+  std::vector<PositionEntry> positions;
+  positions.reserve(aggregated.size());
+  for (auto& [_, entry] : aggregated) {
+    positions.push_back(std::move(entry));
+  }
+  std::sort(positions.begin(), positions.end(), [](const auto& lhs, const auto& rhs) { return lhs.symbol < rhs.symbol; });
+  return positions;
+}
+
+std::vector<BalanceEntry> load_balances_from_csv(const std::filesystem::path& root,
+                                                 const std::vector<std::string>& sources) {
+  std::vector<BalanceEntry> balances;
+  for (const auto& source : sources) {
+    if (std::filesystem::path(source).extension() != ".csv") {
+      continue;
+    }
+    std::ifstream in(root / source);
+    if (!in) {
+      continue;
+    }
+    std::string header_line;
+    if (!std::getline(in, header_line)) {
+      continue;
+    }
+    auto headers = split_csv_row(header_line);
+    for (auto& header : headers) {
+      header = lower_copy(header);
+    }
+    const int amount_idx = header_index(headers, {"amount", "balance", "cash", "value"});
+    const int label_idx = header_index(headers, {"label", "account", "name", "bucket"});
+    if (amount_idx < 0 || label_idx < 0) {
+      continue;
+    }
+    if (header_index(headers, {"symbol", "ticker", "asset"}) >= 0 &&
+        header_index(headers, {"quantity", "qty", "shares", "units"}) >= 0) {
+      continue;
+    }
+    const int currency_idx = header_index(headers, {"currency", "ccy"});
+    std::string row;
+    while (std::getline(in, row)) {
+      auto cells = split_csv_row(row);
+      if (amount_idx >= static_cast<int>(cells.size()) || label_idx >= static_cast<int>(cells.size())) {
+        continue;
+      }
+      auto amount = parse_decimal(cells[static_cast<std::size_t>(amount_idx)]);
+      auto label = trim_copy(cells[static_cast<std::size_t>(label_idx)]);
+      if (!amount || label.empty()) {
+        continue;
+      }
+      BalanceEntry entry;
+      entry.label = label;
+      entry.amount = *amount;
+      entry.source = source;
+      if (currency_idx >= 0 && currency_idx < static_cast<int>(cells.size())) {
+        auto currency = trim_copy(cells[static_cast<std::size_t>(currency_idx)]);
+        if (!currency.empty()) {
+          entry.currency = currency;
+        }
+      }
+      balances.push_back(std::move(entry));
+    }
+  }
+  return balances;
+}
+
 std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtime) {
   std::vector<std::string> lines;
   lines.push_back("Focused symbol: " + (runtime.current_market_symbol.empty() ? std::string("none")
@@ -517,11 +716,61 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
   lines.push_back("Watchlist size: " + std::to_string(runtime.market_entries.size()));
   lines.push_back("Market data: " + (runtime.market_data_enabled ? runtime.market_data_provider : std::string("disabled")));
   lines.push_back("Data sources: " + std::to_string(runtime.finance_data_sources.size()));
+  lines.push_back("Positions: " + std::to_string(runtime.positions.size()) + "  balances: " +
+                  std::to_string(runtime.balances.size()));
   if (!runtime.finance_data_sources.empty()) {
     lines.push_back("Primary source: " + runtime.finance_data_sources.front());
   } else {
     lines.push_back("Primary source: none discovered");
   }
+
+  double cost_basis_total = 0.0;
+  double market_value_total = 0.0;
+  double daily_change_total = 0.0;
+  double cash_total = 0.0;
+  std::size_t positions_with_quotes = 0;
+  for (const auto& position : runtime.positions) {
+    cost_basis_total += position.cost_basis_total;
+    if (auto found = runtime.market_quotes.find(position.symbol); found != runtime.market_quotes.end() &&
+                                                             found->second.has_data) {
+      market_value_total += position.quantity * found->second.last_price;
+      daily_change_total += position.quantity * found->second.change;
+      ++positions_with_quotes;
+    }
+  }
+  for (const auto& balance : runtime.balances) {
+    cash_total += balance.amount;
+  }
+
+  {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Cost basis: " << cost_basis_total
+            << "  cash: " << cash_total;
+    lines.push_back(summary.str());
+  }
+  {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Market value: " << market_value_total << "  total tracked: "
+            << (market_value_total + cash_total);
+    lines.push_back(summary.str());
+  }
+  {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Daily change: " << daily_change_total << "  quoted positions: "
+            << positions_with_quotes << "/" << runtime.positions.size();
+    lines.push_back(summary.str());
+  }
+
+  auto focused_position = std::find_if(runtime.positions.begin(),
+                                       runtime.positions.end(),
+                                       [&](const PositionEntry& entry) { return entry.symbol == runtime.current_market_symbol; });
+  if (focused_position != runtime.positions.end()) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(4) << "Focused position: " << focused_position->symbol << " qty "
+            << focused_position->quantity << " cost " << focused_position->cost_basis_total;
+    lines.push_back(summary.str());
+  }
+
   if (auto found = runtime.market_quotes.find(runtime.current_market_symbol); found != runtime.market_quotes.end()) {
     const auto& quote = found->second;
     if (quote.has_data) {
@@ -535,7 +784,6 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
   } else if (runtime.market_data_enabled) {
     lines.push_back("Quote status: waiting for first refresh");
   }
-  lines.push_back("Next step: wire positions/P&L into this pane.");
   return lines;
 }
 
@@ -620,6 +868,8 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
   runtime.files_entries = discover_file_entries(persistent.root);
   runtime.market_entries = discover_market_entries(persistent.root);
   runtime.finance_data_sources = discover_finance_sources(persistent.root);
+  runtime.positions = load_positions_from_csv(persistent.root, runtime.finance_data_sources);
+  runtime.balances = load_balances_from_csv(persistent.root, runtime.finance_data_sources);
   runtime.market_data_enabled = caps.curl && caps.finnhub_api_key;
   runtime.market_data_provider = runtime.market_data_enabled ? "finnhub" : "none";
   runtime.scratch_editor.buffer = load_scratch_buffer(persistent.root);

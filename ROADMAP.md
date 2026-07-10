@@ -34,8 +34,8 @@ Last updated: 2026-07-10
 - [x] Allow keyboard focus changes across watchlist entries.
 - [x] Add in-app ticker input and persist watchlist updates to `.deck/watchlist.txt`.
 - [x] Add direct API-backed quote refresh using a configured provider key.
-- [ ] Ingest positions and balances from CSV.
-- [ ] Add a portfolio summary with totals, cash, and daily change.
+- [x] Ingest positions and balances from CSV.
+- [x] Add a portfolio summary with totals, cash, and daily change.
 - [ ] Add watchlist quote refresh from pluggable local/external sources beyond the first provider.
 - [ ] Add alerts and threshold tracking.
 
