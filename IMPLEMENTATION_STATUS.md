@@ -29,6 +29,7 @@ Last updated: 2026-07-10
 - The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
+- Review tabs now support explicit file/hunk diff navigation through both keyboard shortcuts and palette commands.
 - Context-linked notes are now available for selected files, search results, and finance symbols, with note files persisted under `.deck/notes/`.
 - A dedicated Notes tab now combines the context-note surface with a workspace scratchpad backed by `.deck/scratch.md`, both with inline editing, save, and reload controls.
 - The shell footer now exposes status messaging for recent actions and degraded behavior.

@@ -27,6 +27,7 @@ This repository now contains:
 - a non-PTY process runner for safe argv-based command execution
 - a lightweight `:` command palette for run/search/git/finance actions
 - review-tab Git actions for refresh, file selection, stage/unstage, selected-file diff, and commit message entry
+- review-tab diff navigation across changed files and hunks from both keys and palette commands
 - context-linked notes for selected files, search results, and finance symbols, stored under `.deck/notes/`
 - a dedicated Notes tab that combines the context-note view with a workspace-local scratchpad backed by `.deck/scratch.md`
 - finance workspace scaffolding with watchlist and local data-source discovery

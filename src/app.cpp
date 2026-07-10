@@ -1421,6 +1421,12 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
     suggestions.push_back("add <ticker>");
     suggestions.push_back("alert <ticker> >= <price> [note]");
     suggestions.push_back("focus <ticker>");
+  } else if (role == TabRole::Review) {
+    suggestions.push_back("refresh");
+    suggestions.push_back("next-file");
+    suggestions.push_back("prev-file");
+    suggestions.push_back("next-hunk");
+    suggestions.push_back("prev-hunk");
   } else {
     suggestions.push_back("refresh");
   }
@@ -1780,6 +1786,49 @@ bool execute_palette_command(ScreenInteractive& screen,
       invalidate_pane_data_snapshot(state.root);
       screen.PostEvent(ftxui::Event::Custom);
     }
+    return true;
+  }
+  if (command == "next-file" || command == "prev-file") {
+    if (current_role != TabRole::Review) {
+      set_status(controller, command + " is only available in Review");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      if (controller.runtime.git_entries.empty()) {
+        controller.runtime.status_message = "No git entries available";
+      } else if (command == "next-file") {
+        controller.runtime.selected_git_index =
+            std::min(controller.runtime.selected_git_index + 1, controller.runtime.git_entries.size() - 1);
+      } else if (controller.runtime.selected_git_index > 0) {
+        --controller.runtime.selected_git_index;
+      }
+    }
+    refresh_git_state(controller, state, caps);
+    invalidate_pane_data_snapshot(state.root);
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
+  if (command == "next-hunk" || command == "prev-hunk") {
+    if (current_role != TabRole::Review) {
+      set_status(controller, command + " is only available in Review");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      if (controller.runtime.diff_hunks.empty()) {
+        controller.runtime.status_message = "No diff hunks available";
+      } else if (command == "next-hunk") {
+        controller.runtime.selected_diff_hunk =
+            std::min(controller.runtime.selected_diff_hunk + 1, controller.runtime.diff_hunks.size() - 1);
+      } else if (controller.runtime.selected_diff_hunk > 0) {
+        --controller.runtime.selected_diff_hunk;
+      }
+    }
+    invalidate_pane_data_snapshot(state.root);
+    screen.PostEvent(ftxui::Event::Custom);
     return true;
   }
   if (command == "add") {
