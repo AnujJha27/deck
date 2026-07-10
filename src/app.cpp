@@ -772,6 +772,73 @@ std::unordered_map<std::string, MarketQuote> load_local_quotes_from_csv(const st
   return quotes;
 }
 
+std::vector<AlertRule> load_alert_rules(const std::filesystem::path& root) {
+  std::vector<AlertRule> rules;
+  std::ifstream in(root / ".deck" / "alerts.txt");
+  if (!in) {
+    return rules;
+  }
+  std::string line;
+  while (std::getline(in, line)) {
+    auto cleaned = trim_copy(line);
+    if (cleaned.empty() || cleaned[0] == '#') {
+      continue;
+    }
+
+    std::istringstream row(cleaned);
+    std::string symbol;
+    std::string op;
+    std::string threshold_token;
+    if (!(row >> symbol >> op >> threshold_token)) {
+      continue;
+    }
+    auto threshold = parse_decimal(threshold_token);
+    if (!threshold) {
+      continue;
+    }
+
+    AlertRule rule;
+    std::transform(symbol.begin(),
+                   symbol.end(),
+                   symbol.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    rule.symbol = symbol;
+    rule.threshold = *threshold;
+    rule.source = ".deck/alerts.txt";
+    rule.direction = (op == "<=" || op == "<") ? AlertDirection::BelowOrEqual : AlertDirection::AboveOrEqual;
+    std::getline(row, rule.note);
+    rule.note = trim_copy(rule.note);
+    rules.push_back(std::move(rule));
+  }
+  return rules;
+}
+
+std::vector<TriggeredAlert> evaluate_alerts(const std::vector<AlertRule>& rules,
+                                            const std::unordered_map<std::string, MarketQuote>& quotes) {
+  std::vector<TriggeredAlert> triggered;
+  for (const auto& rule : rules) {
+    auto found = quotes.find(rule.symbol);
+    if (found == quotes.end() || !found->second.has_data) {
+      continue;
+    }
+    const auto price = found->second.last_price;
+    const bool matches = rule.direction == AlertDirection::AboveOrEqual ? price >= rule.threshold
+                                                                        : price <= rule.threshold;
+    if (!matches) {
+      continue;
+    }
+    std::ostringstream message;
+    message << rule.symbol << " "
+            << (rule.direction == AlertDirection::AboveOrEqual ? ">=" : "<=") << " " << std::fixed
+            << std::setprecision(2) << rule.threshold << " at " << price;
+    if (!rule.note.empty()) {
+      message << "  " << rule.note;
+    }
+    triggered.push_back({rule.symbol, message.str(), rule.source});
+  }
+  return triggered;
+}
+
 std::string market_provider_label(bool has_local_quotes, bool has_finnhub) {
   if (has_local_quotes && has_finnhub) {
     return "local-csv+finnhub";
@@ -794,6 +861,8 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
   lines.push_back("Data sources: " + std::to_string(runtime.finance_data_sources.size()));
   lines.push_back("Positions: " + std::to_string(runtime.positions.size()) + "  balances: " +
                   std::to_string(runtime.balances.size()));
+  lines.push_back("Alerts: " + std::to_string(runtime.alert_rules.size()) + "  triggered: " +
+                  std::to_string(runtime.triggered_alerts.size()));
   if (!runtime.finance_data_sources.empty()) {
     lines.push_back("Primary source: " + runtime.finance_data_sources.front());
   } else {
@@ -859,6 +928,9 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
     }
   } else if (runtime.market_data_enabled) {
     lines.push_back("Quote status: waiting for first refresh");
+  }
+  for (std::size_t i = 0; i < runtime.triggered_alerts.size() && i < 3; ++i) {
+    lines.push_back("Alert: " + runtime.triggered_alerts[i].message);
   }
   return lines;
 }
@@ -947,8 +1019,10 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
   runtime.finance_data_sources = discover_finance_sources(persistent.root);
   runtime.positions = load_positions_from_csv(persistent.root, runtime.finance_data_sources);
   runtime.balances = load_balances_from_csv(persistent.root, runtime.finance_data_sources);
+  runtime.alert_rules = load_alert_rules(persistent.root);
   const auto local_quotes = load_local_quotes_from_csv(persistent.root, runtime.finance_data_sources);
   runtime.market_quotes = local_quotes;
+  runtime.triggered_alerts = evaluate_alerts(runtime.alert_rules, runtime.market_quotes);
   runtime.market_data_enabled = !local_quotes.empty() || (caps.curl && caps.finnhub_api_key);
   runtime.market_data_provider = market_provider_label(!local_quotes.empty(), caps.curl && caps.finnhub_api_key);
   runtime.scratch_editor.buffer = load_scratch_buffer(persistent.root);
@@ -1048,11 +1122,14 @@ void refresh_market_quotes(ScreenInteractive& screen,
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
     controller.runtime.market_quotes = std::move(quotes);
+    controller.runtime.triggered_alerts = evaluate_alerts(controller.runtime.alert_rules, controller.runtime.market_quotes);
     controller.runtime.market_data_enabled = used_local || used_finnhub;
     controller.runtime.market_data_provider = market_provider_label(used_local, used_finnhub);
     controller.runtime.market_data_refresh_in_progress = false;
     controller.runtime.portfolio_lines = portfolio_lines_for(controller.runtime);
-    controller.runtime.status_message = "Market data refreshed";
+    controller.runtime.status_message = controller.runtime.triggered_alerts.empty()
+                                            ? "Market data refreshed"
+                                            : "Alert: " + controller.runtime.triggered_alerts.front().message;
   }
   invalidate_pane_data_snapshot(persistent.root);
   screen.PostEvent(ftxui::Event::Custom);

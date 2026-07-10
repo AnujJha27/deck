@@ -402,6 +402,8 @@ std::vector<std::string> lines_for_markets(const WorkspaceRuntimeState& runtime)
   } else {
     lines.push_back("Provider: disabled");
   }
+  lines.push_back("Alerts: " + std::to_string(runtime.alert_rules.size()) + "  triggered: " +
+                  std::to_string(runtime.triggered_alerts.size()));
   return lines;
 }
 
@@ -682,6 +684,13 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
           const auto& market = runtime.market_entries[i];
           const auto prefix = i == runtime.selected_market_index ? "> " : "  ";
           auto line = prefix + market.symbol;
+          const auto has_alert =
+              std::any_of(runtime.triggered_alerts.begin(),
+                          runtime.triggered_alerts.end(),
+                          [&](const TriggeredAlert& alert) { return alert.symbol == market.symbol; });
+          if (has_alert) {
+            line += "  !alert";
+          }
           if (auto quote = runtime.market_quotes.find(market.symbol); quote != runtime.market_quotes.end() &&
                                                                  quote->second.has_data) {
             std::ostringstream detail;
@@ -760,6 +769,13 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       const auto& market = runtime.market_entries[i];
       const auto prefix = i == runtime.selected_market_index ? "> " : "  ";
       auto line = prefix + market.symbol;
+      const auto has_alert =
+          std::any_of(runtime.triggered_alerts.begin(),
+                      runtime.triggered_alerts.end(),
+                      [&](const TriggeredAlert& alert) { return alert.symbol == market.symbol; });
+      if (has_alert) {
+        line += "  !alert";
+      }
       if (auto quote = runtime.market_quotes.find(market.symbol); quote != runtime.market_quotes.end() &&
                                                                quote->second.has_data) {
         std::ostringstream detail;

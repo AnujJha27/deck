@@ -37,7 +37,7 @@ Last updated: 2026-07-10
 - [x] Ingest positions and balances from CSV.
 - [x] Add a portfolio summary with totals, cash, and daily change.
 - [x] Add watchlist quote refresh from pluggable local/external sources beyond the first provider.
-- [ ] Add alerts and threshold tracking.
+- [x] Add alerts and threshold tracking.
 
 ## Shell polish
 

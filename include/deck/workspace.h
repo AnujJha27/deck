@@ -107,6 +107,25 @@ struct BalanceEntry {
   std::string source;
 };
 
+enum class AlertDirection {
+  AboveOrEqual,
+  BelowOrEqual,
+};
+
+struct AlertRule {
+  std::string symbol;
+  AlertDirection direction = AlertDirection::AboveOrEqual;
+  double threshold = 0.0;
+  std::string note;
+  std::string source;
+};
+
+struct TriggeredAlert {
+  std::string symbol;
+  std::string message;
+  std::string source;
+};
+
 struct GitStatusEntry {
   std::string path;
   std::string index_status = " ";
@@ -161,6 +180,8 @@ struct WorkspaceRuntimeState {
   std::vector<std::string> finance_data_sources;
   std::vector<PositionEntry> positions;
   std::vector<BalanceEntry> balances;
+  std::vector<AlertRule> alert_rules;
+  std::vector<TriggeredAlert> triggered_alerts;
   std::vector<std::string> portfolio_lines;
   NoteContext note_context;
   TextEditorState note_editor;
