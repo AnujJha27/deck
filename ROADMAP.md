@@ -15,6 +15,7 @@ Last updated: 2026-07-10
 - [x] Add rerun/cancel semantics for the single active workspace task.
 - [x] Introduce refresh hooks so panes can update without restarting the UI.
 - [x] Add a lightweight command palette for common actions.
+- [x] Add PTY-backed command execution for terminal-like tasks.
 
 ## Dev workflow
 
@@ -43,8 +44,10 @@ Last updated: 2026-07-10
 
 - [x] Add pane-level refresh and status messaging.
 - [x] Add better safe-mode and degraded-capability explanations in the UI.
-- [ ] Fix terminal shutdown so quitting never leaves mouse/escape garbage printed.
-- [ ] Reduce tab-switch/render lag under repeated redraws.
+- [x] Fix terminal shutdown so quitting never leaves mouse/escape garbage printed.
+- [x] Reduce tab-switch/render lag under repeated redraws.
+- [ ] Extend Git review beyond file-level actions into hunk-level staging.
+- [ ] Add richer portfolio analytics and performance views.
 
 ## Exit criteria for MVP
 

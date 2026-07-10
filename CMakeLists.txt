@@ -39,6 +39,7 @@ if(BUILD_TESTING)
   add_executable(deck_tests
     tests/test_environment.cpp
     tests/test_main.cpp
+    tests/test_process.cpp
     tests/test_split_tree.cpp
     tests/test_workspace.cpp
     tests/test_event_bus.cpp

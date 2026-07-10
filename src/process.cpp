@@ -1,7 +1,10 @@
 #include "deck/process.h"
 
 #include <fcntl.h>
+#include <poll.h>
+#include <pty.h>
 #include <spawn.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -60,6 +63,11 @@ struct SpawnContext {
   pid_t pid = -1;
   int stdout_pipe[2] = {-1, -1};
   int stderr_pipe[2] = {-1, -1};
+};
+
+struct PtyContext {
+  pid_t pid = -1;
+  int master_fd = -1;
 };
 
 bool switch_cwd_for_spawn(const ProcessRequest& request, std::filesystem::path& original_cwd, std::string& error_text) {
@@ -193,6 +201,39 @@ bool spawn_attached_process(const ProcessRequest& request, pid_t& pid, std::stri
   return true;
 }
 
+void apply_environment_overrides(const ProcessRequest& request) {
+  for (const auto& [key, value] : request.env) {
+    setenv(key.c_str(), value.c_str(), 1);
+  }
+}
+
+bool spawn_pty_process(const ProcessRequest& request, PtyContext& context, std::string& error_text) {
+  auto argv = build_argv(request.argv);
+  context.pid = forkpty(&context.master_fd, nullptr, nullptr, nullptr);
+  if (context.pid < 0) {
+    error_text = std::strerror(errno);
+    return false;
+  }
+
+  if (context.pid == 0) {
+    if (!request.cwd.empty()) {
+      std::error_code ec;
+      std::filesystem::current_path(request.cwd, ec);
+      if (ec) {
+        std::fprintf(stderr, "chdir failed: %s\n", ec.message().c_str());
+        _exit(127);
+      }
+    }
+    apply_environment_overrides(request);
+    execvp(argv[0], argv.data());
+    std::fprintf(stderr, "exec failed: %s\n", std::strerror(errno));
+    _exit(127);
+  }
+
+  set_nonblocking(context.master_fd);
+  return true;
+}
+
 void append_and_notify(ProcessResult& result,
                        const ProcessCallbacks& callbacks,
                        int fd,
@@ -214,6 +255,35 @@ void append_and_notify(ProcessResult& result,
   }
 }
 
+void append_and_notify_pty(ProcessResult& result, const ProcessCallbacks& callbacks, int fd) {
+  auto chunk = read_available(fd);
+  if (chunk.empty()) {
+    return;
+  }
+  result.stdout_text.append(chunk);
+  if (callbacks.on_stdout_chunk) {
+    callbacks.on_stdout_chunk(chunk);
+  }
+}
+
+int exit_code_from_status(int status) {
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+  if (WIFSIGNALED(status)) {
+    return 128 + WTERMSIG(status);
+  }
+  return -1;
+}
+
+void terminate_process_group(pid_t pid) {
+  if (pid <= 0) {
+    return;
+  }
+  ::kill(-pid, SIGKILL);
+  ::kill(pid, SIGKILL);
+}
+
 }  // namespace
 
 ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
@@ -227,7 +297,54 @@ ProcessResult ProcessRunner::run_streaming(const ProcessRequest& request, const 
     return result;
   }
   if (request.use_pty) {
-    result.stderr_text = "PTY execution is not implemented in this scaffold";
+    PtyContext context;
+    if (!spawn_pty_process(request, context, result.stderr_text)) {
+      return result;
+    }
+
+    const auto deadline = request.timeout ? std::chrono::steady_clock::now() + *request.timeout
+                                          : std::chrono::steady_clock::time_point::max();
+    bool process_exited = false;
+    while (true) {
+      pollfd pfd{context.master_fd, POLLIN | POLLHUP, 0};
+      (void)::poll(&pfd, 1, 40);
+      append_and_notify_pty(result, callbacks, context.master_fd);
+
+      if (!process_exited) {
+        int status = 0;
+        pid_t waited = waitpid(context.pid, &status, WNOHANG);
+        if (waited == context.pid) {
+          result.exit_code = exit_code_from_status(status);
+          process_exited = true;
+        }
+      }
+
+      if (callbacks.should_cancel && callbacks.should_cancel()) {
+        result.cancelled = true;
+        terminate_process_group(context.pid);
+        waitpid(context.pid, nullptr, 0);
+        result.exit_code = 130;
+        break;
+      }
+
+      if (std::chrono::steady_clock::now() >= deadline) {
+        result.timed_out = true;
+        terminate_process_group(context.pid);
+        waitpid(context.pid, nullptr, 0);
+        result.exit_code = 124;
+        break;
+      }
+
+      if (process_exited) {
+        if ((pfd.revents & POLLHUP) != 0) {
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+    }
+
+    append_and_notify_pty(result, callbacks, context.master_fd);
+    ::close(context.master_fd);
     return result;
   }
 
@@ -282,9 +399,6 @@ ProcessResult ProcessRunner::run_streaming(const ProcessRequest& request, const 
 
 int ProcessRunner::run_attached(const ProcessRequest& request) const {
   if (request.argv.empty()) {
-    return -1;
-  }
-  if (request.use_pty) {
     return -1;
   }
 

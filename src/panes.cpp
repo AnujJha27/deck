@@ -199,6 +199,7 @@ std::vector<std::string> lines_for_terminal(const WorkspacePersistentState& stat
     return {
         "Active task state: " + to_string(runtime.active_task_state),
         "Last task: " + task.name + " [" + to_string(task.state) + "]",
+        std::string("Task mode: ") + (task.use_pty ? "PTY" : "pipe"),
         "Command: " + task.command,
         "Started: " + task.started_at,
         "Finished: " + task.finished_at,
@@ -209,7 +210,7 @@ std::vector<std::string> lines_for_terminal(const WorkspacePersistentState& stat
       "Active task state: " + to_string(runtime.active_task_state),
       "Recent command: " + (state.recent_commands.empty() ? std::string("none") : state.recent_commands.front()),
       "Command slots: " + std::to_string(state.recent_commands.size()),
-      "PTY runner: scaffolded, non-PTY exec is available",
+      "PTY runner: available for command tasks",
   };
 }
 
@@ -377,7 +378,7 @@ std::vector<std::string> lines_for_logs(const WorkspacePersistentState& state,
     const auto& task = runtime.task_history.back();
     return {
         "Selected source: " + state.selected_log_source,
-        "Latest task: " + task.name,
+        "Latest task: " + task.name + (task.use_pty ? " [PTY]" : " [pipe]"),
         task.stdout_excerpt.empty() ? "stdout: none" : "stdout: " + task.stdout_excerpt,
         task.stderr_excerpt.empty() ? "stderr: none" : "stderr: " + task.stderr_excerpt,
     };

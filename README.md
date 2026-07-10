@@ -5,6 +5,7 @@
 ## What it does
 
 - run and rerun workspace commands
+- stream command output from pipe or PTY-backed tasks
 - inspect recent task output
 - search the workspace with `rg`
 - review Git status and diffs from inside the shell
@@ -20,6 +21,7 @@
 
 - fullscreen FTXUI interface with persistent tabs and split panes
 - command palette for common actions
+- PTY-backed recent-command execution with rerun/cancel support
 - status footer and degraded-capability messaging
 - safe mode for reduced terminal interaction
 
@@ -108,6 +110,8 @@ Common controls:
 - `r` run recent command
 - `R` rerun latest task
 - `x` refresh current surface or cancel active task
+
+PTY-backed command tasks stream through the Logs pane as a single terminal-style output channel, so interactive programs keep their expected TTY behavior.
 
 Finance controls:
 

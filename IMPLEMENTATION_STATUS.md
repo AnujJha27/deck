@@ -10,9 +10,10 @@ Last updated: 2026-07-10
 - SQLite-backed workspace storage is wired under `.deck/state.db`.
 - Typed event bus is implemented.
 - Environment capability detection is implemented.
-- Non-PTY subprocess execution is implemented.
+- Pipe and PTY subprocess execution are implemented.
 - Runtime task records now capture command name, exit state, timestamps, and output excerpts for startup probes.
 - The shell can launch a recent command, rerun the latest task, cancel the active task, and stream live subprocess output into runtime task records.
+- Recent-command task launches now use a PTY path so terminal-oriented tools keep TTY behavior while still feeding the Logs pane.
 - The Search pane now supports in-app `rg` queries with bounded async results and basic result selection.
 - Selected search results can now open safely in `nvim` with line targeting through restored terminal I/O.
 - The Files pane now supports basic directory navigation, file-open handoff into `nvim`, and a browsable current subtree.
@@ -39,7 +40,7 @@ Last updated: 2026-07-10
 
 ## Partially implemented
 
-- Terminal and Logs panes reflect real runtime task records and live non-PTY task streaming, but not a PTY session.
+- Terminal and Logs panes reflect real runtime task records, including whether the latest task used a PTY or plain pipes.
 - Search pane can run and display `rg` queries and open selected results in `nvim`, but broader file navigation is still missing.
 - File navigation is keyboard-driven and directory-aware, but it is still not a full tree widget.
 - Git and Diff panes now support basic file-level staging, unstaging, selected-file diff inspection, and commit submission, but not hunk-level selection or branch management.
@@ -49,8 +50,6 @@ Last updated: 2026-07-10
 
 ## Not implemented yet
 
-- PTY task execution.
-- Live task log streaming.
 - Richer portfolio analytics.
 
 ## Known issues

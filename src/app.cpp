@@ -344,10 +344,11 @@ std::vector<std::string> split_command_line(const std::string& command) {
   return argv;
 }
 
-TaskRecord make_task_record(const std::string& name, const std::vector<std::string>& argv) {
+TaskRecord make_task_record(const std::string& name, const std::vector<std::string>& argv, bool use_pty = false) {
   TaskRecord record;
   record.name = name;
   record.argv = argv;
+  record.use_pty = use_pty;
   record.command = join_argv(argv);
   record.state = TaskState::Starting;
   record.started_at = format_timestamp(std::chrono::system_clock::now());
@@ -1471,6 +1472,7 @@ void launch_task(ScreenInteractive& screen,
                  const WorkspacePersistentState& persistent,
                  std::string name,
                  std::vector<std::string> argv,
+                 bool use_pty,
                  const EnvironmentCapabilities& caps) {
   if (argv.empty()) {
     return;
@@ -1484,17 +1486,18 @@ void launch_task(ScreenInteractive& screen,
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
     controller.runtime.active_task_state = TaskState::Starting;
-    controller.runtime.task_history.push_back(make_task_record(name, argv));
+    controller.runtime.task_history.push_back(make_task_record(name, argv, use_pty));
     task_index = controller.runtime.task_history.size() - 1;
     controller.active_task_index = task_index;
   }
   screen.PostEvent(ftxui::Event::Custom);
 
-  controller.worker = std::jthread([&, task_index, name = std::move(name), argv = std::move(argv)] {
+  controller.worker = std::jthread([&, task_index, name = std::move(name), argv = std::move(argv), use_pty] {
     ProcessRunner runner;
     ProcessRequest request;
     request.argv = argv;
     request.cwd = persistent.root;
+    request.use_pty = use_pty;
 
     {
       std::lock_guard<std::mutex> lock(controller.mutex);
@@ -1640,7 +1643,7 @@ bool run_git_action(ScreenInteractive& screen,
     screen.PostEvent(ftxui::Event::Custom);
     return true;
   }
-  launch_task(screen, controller, state, name, std::move(argv), caps);
+  launch_task(screen, controller, state, name, std::move(argv), false, caps);
   return true;
 }
 
@@ -1712,18 +1715,21 @@ bool execute_palette_command(ScreenInteractive& screen,
       screen.PostEvent(ftxui::Event::Custom);
       return true;
     }
-    launch_task(screen, controller, state, "recent command", split_command_line(state.recent_commands.front()), caps);
+    launch_task(
+        screen, controller, state, "recent command", split_command_line(state.recent_commands.front()), true, caps);
     return true;
   }
   if (command == "rerun") {
     std::vector<std::string> rerun_argv;
     std::string name = "rerun";
+    bool use_pty = false;
     {
       std::lock_guard<std::mutex> lock(controller.mutex);
       if (!controller.runtime.task_history.empty()) {
         const auto& task = controller.runtime.task_history.back();
         rerun_argv = task.argv;
         name = task.name + " rerun";
+        use_pty = task.use_pty;
       }
     }
     if (rerun_argv.empty()) {
@@ -1731,7 +1737,7 @@ bool execute_palette_command(ScreenInteractive& screen,
       screen.PostEvent(ftxui::Event::Custom);
       return true;
     }
-    launch_task(screen, controller, state, std::move(name), std::move(rerun_argv), caps);
+    launch_task(screen, controller, state, std::move(name), std::move(rerun_argv), use_pty, caps);
     return true;
   }
   if (command == "search") {
@@ -1745,8 +1751,13 @@ bool execute_palette_command(ScreenInteractive& screen,
     return true;
   }
   if (command == "git-status") {
-    launch_task(
-        screen, controller, state, "git status", {"git", "-C", state.root.string(), "status", "--short", "--branch"}, caps);
+    launch_task(screen,
+                controller,
+                state,
+                "git status",
+                {"git", "-C", state.root.string(), "status", "--short", "--branch"},
+                false,
+                caps);
     return true;
   }
   if (command == "git-diff") {
@@ -1755,6 +1766,7 @@ bool execute_palette_command(ScreenInteractive& screen,
                 state,
                 "git diff",
                 {"git", "-C", state.root.string(), "diff", "--stat", "--compact-summary"},
+                false,
                 caps);
     return true;
   }
@@ -2225,23 +2237,25 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
     if (event == ftxui::Event::Character('r')) {
       if (!state.recent_commands.empty()) {
         auto argv = split_command_line(state.recent_commands.front());
-        launch_task(screen, controller, state, "recent command", std::move(argv), caps);
+        launch_task(screen, controller, state, "recent command", std::move(argv), true, caps);
       }
       return true;
     }
     if (event == ftxui::Event::Character('R')) {
       std::vector<std::string> argv;
       std::string name = "rerun";
+      bool use_pty = false;
       {
         std::lock_guard<std::mutex> lock(controller.mutex);
         if (!controller.runtime.task_history.empty()) {
           const auto& task = controller.runtime.task_history.back();
           argv = task.argv;
           name = task.name + " rerun";
+          use_pty = task.use_pty;
         }
       }
       if (!argv.empty()) {
-        launch_task(screen, controller, state, std::move(name), std::move(argv), caps);
+        launch_task(screen, controller, state, std::move(name), std::move(argv), use_pty, caps);
       }
       return true;
     }

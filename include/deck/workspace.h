@@ -17,6 +17,7 @@ struct TaskRecord {
   std::string name;
   std::string command;
   std::vector<std::string> argv;
+  bool use_pty = false;
   TaskState state = TaskState::Idle;
   int exit_code = 0;
   std::string started_at;

@@ -1,0 +1,74 @@
+#include "deck/process.h"
+
+#include <chrono>
+#include <functional>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace deck::test {
+using TestFn = std::function<void()>;
+std::vector<std::pair<std::string, TestFn>>& registry();
+}  // namespace deck::test
+
+#define DECK_TEST(name)                                                         \
+  void name();                                                                  \
+  namespace {                                                                   \
+  const bool name##_registered = [] {                                           \
+    deck::test::registry().push_back({#name, name});                            \
+    return true;                                                                \
+  }();                                                                          \
+  }                                                                             \
+  void name()
+
+#define DECK_ASSERT(condition)                                                  \
+  do {                                                                          \
+    if (!(condition)) {                                                         \
+      throw std::runtime_error("assertion failed: " #condition);                \
+    }                                                                           \
+  } while (false)
+
+DECK_TEST(process_runner_streams_non_pty_output) {
+  deck::ProcessRunner runner;
+  deck::ProcessRequest request;
+  request.argv = {"sh", "-lc", "printf 'hello'; printf 'err' >&2"};
+
+  auto result = runner.run(request);
+
+  DECK_ASSERT(result.exit_code == 0);
+  DECK_ASSERT(result.stdout_text == "hello");
+  DECK_ASSERT(result.stderr_text == "err");
+}
+
+DECK_TEST(process_runner_supports_pty_output) {
+  deck::ProcessRunner runner;
+  deck::ProcessRequest request;
+  request.argv = {"sh", "-lc", "printf 'pty-ok'"};
+  request.use_pty = true;
+
+  auto result = runner.run(request);
+
+  DECK_ASSERT(result.exit_code == 0);
+  DECK_ASSERT(result.stdout_text.find("pty-ok") != std::string::npos);
+  DECK_ASSERT(result.stderr_text.empty());
+}
+
+DECK_TEST(process_runner_cancels_pty_tasks) {
+  deck::ProcessRunner runner;
+  deck::ProcessRequest request;
+  request.argv = {"sh", "-lc", "sleep 5"};
+  request.use_pty = true;
+
+  auto result = runner.run_streaming(
+      request,
+      deck::ProcessCallbacks{
+          .should_cancel =
+              [started = std::chrono::steady_clock::now()] {
+                return std::chrono::steady_clock::now() - started > std::chrono::milliseconds(150);
+              },
+      });
+
+  DECK_ASSERT(result.cancelled);
+  DECK_ASSERT(result.exit_code == 130);
+}
