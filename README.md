@@ -39,7 +39,7 @@
 - watchlist discovery from `.deck/watchlist.txt`
 - quote refresh from local CSV data and optional Finnhub fallback
 - CSV ingestion for positions and balances
-- portfolio totals, cash, daily change, unrealized P/L, and basic movers
+- portfolio totals, cash, daily change, unrealized P/L, allocation mix, concentration, and basic movers
 - threshold alerts loaded from or written to `.deck/alerts.txt`
 
 ### Notes

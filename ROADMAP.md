@@ -47,7 +47,7 @@ Last updated: 2026-07-10
 - [x] Fix terminal shutdown so quitting never leaves mouse/escape garbage printed.
 - [x] Reduce tab-switch/render lag under repeated redraws.
 - [x] Extend Git review beyond file-level actions into hunk-level staging.
-- [ ] Add richer portfolio analytics and performance views.
+- [x] Add richer portfolio analytics and performance views.
 
 ## Exit criteria for MVP
 

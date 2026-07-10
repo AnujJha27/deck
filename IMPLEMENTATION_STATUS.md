@@ -28,6 +28,7 @@ Last updated: 2026-07-10
 - Finance alerts can now also be added in-app from the Finance tab and persisted back to `.deck/alerts.txt`.
 - The workspace summary now calls out safe-mode behavior and degraded capabilities per tab instead of leaving missing tools/providers implicit.
 - The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
+- The Portfolio pane now also calls out invested-vs-cash mix, quote coverage, largest holding concentration, and best/worst unrealized positions.
 - Git status and diff pane redraws now reuse cached refresh-time command output instead of shelling out on every render.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
@@ -46,12 +47,8 @@ Last updated: 2026-07-10
 - File navigation is keyboard-driven and directory-aware, but it is still not a full tree widget.
 - Git and Diff panes now support file-level staging, selected-hunk stage/unstage, selected-file diff inspection, and commit submission, but not branch management.
 - The command palette covers core actions, but it is still a typed overlay rather than a richer fuzzy picker or full command router.
-- Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, and threshold alerts, but richer analytics are still missing.
+- Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, allocation/concentration analytics, and threshold alerts.
 - The shell has multi-tab structure and persistence, but tab-local interactivity remains thin.
-
-## Not implemented yet
-
-- Richer portfolio analytics.
 
 ## Known issues
 

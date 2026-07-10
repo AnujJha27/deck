@@ -973,12 +973,16 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
   std::size_t positions_with_quotes = 0;
   std::optional<std::pair<std::string, double>> best_daily_mover;
   std::optional<std::pair<std::string, double>> worst_daily_mover;
+  std::optional<std::pair<std::string, double>> largest_holding;
+  std::optional<std::pair<std::string, double>> best_unrealized;
+  std::optional<std::pair<std::string, double>> worst_unrealized;
   for (const auto& position : runtime.positions) {
     cost_basis_total += position.cost_basis_total;
     if (auto found = runtime.market_quotes.find(position.symbol); found != runtime.market_quotes.end() &&
                                                              found->second.has_data) {
       const auto position_market_value = position.quantity * found->second.last_price;
       const auto position_daily_change = position.quantity * found->second.change;
+      const auto position_unrealized = position_market_value - position.cost_basis_total;
       market_value_total += position_market_value;
       quoted_cost_basis_total += position.cost_basis_total;
       daily_change_total += position_daily_change;
@@ -989,11 +993,21 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
       if (!worst_daily_mover || position_daily_change < worst_daily_mover->second) {
         worst_daily_mover = {position.symbol, position_daily_change};
       }
+      if (!largest_holding || position_market_value > largest_holding->second) {
+        largest_holding = {position.symbol, position_market_value};
+      }
+      if (!best_unrealized || position_unrealized > best_unrealized->second) {
+        best_unrealized = {position.symbol, position_unrealized};
+      }
+      if (!worst_unrealized || position_unrealized < worst_unrealized->second) {
+        worst_unrealized = {position.symbol, position_unrealized};
+      }
     }
   }
   for (const auto& balance : runtime.balances) {
     cash_total += balance.amount;
   }
+  const auto total_tracked = market_value_total + cash_total;
 
   {
     std::ostringstream summary;
@@ -1004,7 +1018,7 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
   {
     std::ostringstream summary;
     summary << std::fixed << std::setprecision(2) << "Market value: " << market_value_total << "  total tracked: "
-            << (market_value_total + cash_total);
+            << total_tracked;
     lines.push_back(summary.str());
   }
   {
@@ -1017,6 +1031,18 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
     std::ostringstream summary;
     summary << std::fixed << std::setprecision(2) << "Unrealized P/L: " << (market_value_total - quoted_cost_basis_total)
             << "  quoted cost basis: " << quoted_cost_basis_total;
+    lines.push_back(summary.str());
+  }
+  if (total_tracked > 0.0) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(1) << "Allocation: invested " << (market_value_total * 100.0 / total_tracked)
+            << "%  cash " << (cash_total * 100.0 / total_tracked) << "%";
+    lines.push_back(summary.str());
+  }
+  if (!runtime.positions.empty()) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(1) << "Quote coverage: "
+            << (runtime.positions.empty() ? 0.0 : (positions_with_quotes * 100.0 / runtime.positions.size())) << "%";
     lines.push_back(summary.str());
   }
 
@@ -1048,6 +1074,24 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
     std::ostringstream summary;
     summary << std::fixed << std::setprecision(2) << "Worst daily mover: " << worst_daily_mover->first << " "
             << worst_daily_mover->second;
+    lines.push_back(summary.str());
+  }
+  if (largest_holding && market_value_total > 0.0) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(1) << "Largest holding: " << largest_holding->first << " "
+            << largest_holding->second << " (" << (largest_holding->second * 100.0 / market_value_total) << "% of invested)";
+    lines.push_back(summary.str());
+  }
+  if (best_unrealized) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Best unrealized: " << best_unrealized->first << " "
+            << best_unrealized->second;
+    lines.push_back(summary.str());
+  }
+  if (worst_unrealized) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Worst unrealized: " << worst_unrealized->first << " "
+            << worst_unrealized->second;
     lines.push_back(summary.str());
   }
 
