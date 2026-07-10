@@ -55,7 +55,6 @@ Last updated: 2026-07-10
 
 ## Known issues
 
-- Quitting the shell can still leave terminal mouse/escape sequences printed to the screen in some cases, which means terminal state restoration is not fully correct yet.
 - The UI can still feel laggy when switching tabs or forcing repeated redraws.
 
 ## Current MVP assessment

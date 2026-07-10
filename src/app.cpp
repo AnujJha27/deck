@@ -2176,7 +2176,8 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
     return content;
   });
 
-  auto screen = ScreenInteractive::Fullscreen();
+  auto screen = ScreenInteractive::FullscreenAlternateScreen();
+  screen.TrackMouse(true);
   if (controller.runtime.market_data_enabled) {
     controller.market_worker = std::jthread([&](std::stop_token stop_token) {
       while (!stop_token.stop_requested()) {
@@ -2924,6 +2925,8 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   });
 
   screen.Loop(root);
+  screen.TrackMouse(false);
+  std::cout << screen.ResetPosition(true) << "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l" << std::flush;
   controller.cancel_requested = true;
   if (controller.worker.joinable()) {
     controller.worker.join();
