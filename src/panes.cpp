@@ -405,7 +405,7 @@ std::vector<std::string> lines_for_markets(const WorkspaceRuntimeState& runtime)
   lines.push_back("Alerts: " + std::to_string(runtime.alert_rules.size()) + "  triggered: " +
                   std::to_string(runtime.triggered_alerts.size()));
   if (!runtime.market_data_enabled) {
-    lines.push_back("Hint: add local quote CSV data or FINNHUB_API_KEY to enable refresh.");
+    lines.push_back("Hint: add local quote CSV data, or ensure `doctor` sees FINNHUB_API_KEY and curl.");
   }
   return lines;
 }

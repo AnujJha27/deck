@@ -77,3 +77,23 @@ DECK_TEST(resolve_env_var_prefers_launch_directory_dotenv) {
   std::filesystem::remove(launch_root);
   std::filesystem::remove(workspace_root);
 }
+
+DECK_TEST(detect_environment_reports_finnhub_key_source) {
+  const auto original_cwd = std::filesystem::current_path();
+  const auto root = std::filesystem::temp_directory_path() / "deck_env_source_test";
+  std::filesystem::create_directories(root);
+  {
+    std::ofstream out(root / ".env", std::ios::trunc);
+    out << "FINNHUB_API_KEY=source_key\n";
+  }
+
+  std::filesystem::current_path(root);
+  auto caps = deck::detect_environment(root);
+  std::filesystem::current_path(original_cwd);
+
+  DECK_ASSERT(caps.finnhub_api_key);
+  DECK_ASSERT(caps.finnhub_api_key_source.find(".env") != std::string::npos);
+
+  std::filesystem::remove(root / ".env");
+  std::filesystem::remove(root);
+}

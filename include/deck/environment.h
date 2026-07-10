@@ -18,6 +18,7 @@ struct EnvironmentCapabilities {
   bool is_wsl = false;
   bool inside_tmux = false;
   bool finnhub_api_key = false;
+  std::string finnhub_api_key_source;
 };
 
 EnvironmentCapabilities detect_environment(const std::filesystem::path& root);

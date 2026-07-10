@@ -926,7 +926,13 @@ std::vector<std::string> capability_notes_for(const WorkspaceRuntimeState& runti
   }
   if (role == TabRole::Finance) {
     if (!runtime.market_data_enabled) {
-      notes.push_back("Finance quotes are disabled until local quote CSV data or `FINNHUB_API_KEY` is available.");
+      if (!caps.curl) {
+        notes.push_back("Finance quotes are disabled because local quotes are missing and `curl` is unavailable.");
+      } else if (!caps.finnhub_api_key) {
+        notes.push_back("Finance quotes are disabled until local quotes exist or `FINNHUB_API_KEY` is detected.");
+      } else {
+        notes.push_back("Finance quotes are disabled until a watchlist symbol matches a working provider.");
+      }
     } else if (runtime.market_data_provider == "local-csv") {
       notes.push_back("Finance quotes currently come from local CSV data only.");
     } else if (runtime.market_data_provider == "none") {
@@ -1215,7 +1221,13 @@ void refresh_market_quotes(ScreenInteractive& screen,
                                                          : std::nullopt;
   const auto local_quotes = load_local_quotes_from_csv(persistent.root, discover_finance_sources(persistent.root));
   if (local_quotes.empty() && !token) {
-    set_status(controller, caps.curl ? "No local quote CSV or FINNHUB_API_KEY found" : "No local quote CSV found");
+    if (!caps.curl) {
+      set_status(controller, "No local quote CSV found and curl is unavailable for Finnhub refresh");
+    } else if (!caps.finnhub_api_key) {
+      set_status(controller, "No local quote CSV found and FINNHUB_API_KEY was not detected; run doctor");
+    } else {
+      set_status(controller, "No local quote CSV or working Finnhub token found");
+    }
     return;
   }
 

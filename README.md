@@ -83,6 +83,8 @@ or place it in `.env`:
 FINNHUB_API_KEY=your_key_here
 ```
 
+`deck doctor` reports whether the key was found and where it was discovered from, which is the quickest way to verify `.env` detection.
+
 Local quote CSVs can also provide prices without an API key. Example headers:
 
 ```text

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 
 namespace deck {
@@ -88,30 +89,64 @@ std::optional<std::string> read_dotenv_value(const std::filesystem::path& root, 
   return std::nullopt;
 }
 
-}  // namespace
+struct ResolvedEnvVar {
+  std::string value;
+  std::string source;
+};
 
-std::optional<std::string> resolve_env_var(const std::filesystem::path& root, const std::string& key) {
-  if (const char* value = std::getenv(key.c_str()); value != nullptr && *value != '\0') {
-    return std::string(value);
-  }
-
-  std::vector<std::filesystem::path> search_roots;
+std::vector<std::filesystem::path> dotenv_search_roots(const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> roots;
   std::error_code ec;
   const auto cwd = std::filesystem::current_path(ec);
   if (!ec) {
-    search_roots.push_back(cwd);
+    roots.push_back(cwd);
     if (cwd.filename() == "build" && cwd.has_parent_path()) {
-      search_roots.push_back(cwd.parent_path());
+      roots.push_back(cwd.parent_path());
     }
   }
   if (!root.empty()) {
-    search_roots.push_back(root);
+    roots.push_back(root);
+  }
+  return roots;
+}
+
+std::vector<std::filesystem::path> dotenv_candidate_files(const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> files;
+  std::set<std::filesystem::path> seen;
+  for (const auto& search_root : dotenv_search_roots(root)) {
+    auto cursor = search_root;
+    while (!cursor.empty()) {
+      const auto env_file = cursor / ".env";
+      if (seen.insert(env_file).second) {
+        files.push_back(env_file);
+      }
+      if (!cursor.has_parent_path() || cursor.parent_path() == cursor) {
+        break;
+      }
+      cursor = cursor.parent_path();
+    }
+  }
+  return files;
+}
+
+std::optional<ResolvedEnvVar> resolve_env_var_details(const std::filesystem::path& root, const std::string& key) {
+  if (const char* value = std::getenv(key.c_str()); value != nullptr && *value != '\0') {
+    return ResolvedEnvVar{std::string(value), "process environment"};
   }
 
-  for (const auto& candidate_root : search_roots) {
-    if (auto resolved = read_dotenv_value(candidate_root, key)) {
-      return resolved;
+  for (const auto& env_file : dotenv_candidate_files(root)) {
+    if (auto resolved = read_dotenv_value(env_file.parent_path(), key)) {
+      return ResolvedEnvVar{*resolved, env_file.string()};
     }
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<std::string> resolve_env_var(const std::filesystem::path& root, const std::string& key) {
+  if (auto resolved = resolve_env_var_details(root, key)) {
+    return resolved->value;
   }
   return std::nullopt;
 }
@@ -128,7 +163,10 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
                    std::string(std::getenv("COLORTERM")).find("truecolor") != std::string::npos;
   caps.inside_tmux = std::getenv("TMUX") != nullptr;
   caps.is_wsl = file_contains("/proc/version", "Microsoft") || file_contains("/proc/sys/kernel/osrelease", "WSL");
-  caps.finnhub_api_key = resolve_env_var(root, "FINNHUB_API_KEY").has_value();
+  if (auto finnhub = resolve_env_var_details(root, "FINNHUB_API_KEY")) {
+    caps.finnhub_api_key = true;
+    caps.finnhub_api_key_source = finnhub->source;
+  }
   return caps;
 }
 
@@ -137,7 +175,8 @@ std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& cap
       std::string("git: ") + (caps.git ? "ok" : "missing"),
       std::string("rg: ") + (caps.rg ? "ok" : "missing"),
       std::string("curl: ") + (caps.curl ? "ok" : "missing"),
-      std::string("finnhub_api_key: ") + (caps.finnhub_api_key ? "present" : "missing"),
+      std::string("finnhub_api_key: ") + (caps.finnhub_api_key ? "present" : "missing") +
+          (caps.finnhub_api_key_source.empty() ? "" : " (" + caps.finnhub_api_key_source + ")"),
       std::string("pdftotext: ") + (caps.pdftotext ? "ok" : "missing"),
       std::string("pdftoppm: ") + (caps.pdftoppm ? "ok" : "missing"),
       std::string("kitty_graphics: ") + (caps.kitty_graphics ? "enabled" : "unavailable"),
