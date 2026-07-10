@@ -173,6 +173,8 @@ struct WorkspaceRuntimeState {
   std::size_t selected_git_index = 0;
   std::vector<DiffHunk> diff_hunks;
   std::size_t selected_diff_hunk = 0;
+  std::string git_status_text;
+  std::string diff_preview_text;
   std::vector<MarketEntry> market_entries;
   std::size_t selected_market_index = 0;
   std::string current_market_symbol;

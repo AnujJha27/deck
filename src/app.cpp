@@ -1155,6 +1155,7 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
     status_request.timeout = std::chrono::milliseconds(300);
     const auto status_result = runner.run(status_request);
     runtime.git_entries = parse_git_status_entries(status_result.stdout_text);
+    runtime.git_status_text = status_result.stdout_text;
     if (!runtime.git_entries.empty()) {
       const auto& selected = runtime.git_entries.front();
       const auto staged = selected.index_status != " " && selected.index_status != "?";
@@ -1166,6 +1167,7 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
       diff_request.timeout = std::chrono::milliseconds(300);
       const auto diff_result = runner.run(diff_request);
       runtime.diff_hunks = parse_diff_hunks(diff_result.stdout_text);
+      runtime.diff_preview_text = diff_result.stdout_text;
     }
   }
 
@@ -1357,6 +1359,8 @@ void refresh_git_state(ShellTaskController& controller,
     controller.runtime.selected_git_index = 0;
     controller.runtime.diff_hunks.clear();
     controller.runtime.selected_diff_hunk = 0;
+    controller.runtime.git_status_text.clear();
+    controller.runtime.diff_preview_text.clear();
     return;
   }
 
@@ -1375,6 +1379,7 @@ void refresh_git_state(ShellTaskController& controller,
 
   std::vector<GitStatusEntry> git_entries = parse_git_status_entries(result.stdout_text);
   std::vector<DiffHunk> diff_hunks;
+  std::string diff_preview_text;
   if (!git_entries.empty()) {
     const auto& selected = git_entries[std::min(selected_git_index, git_entries.size() - 1)];
     const auto staged = selected.index_status != " " && selected.index_status != "?";
@@ -1386,16 +1391,19 @@ void refresh_git_state(ShellTaskController& controller,
     diff_request.timeout = std::chrono::milliseconds(500);
     const auto diff_result = runner.run(diff_request);
     diff_hunks = parse_diff_hunks(diff_result.stdout_text);
+    diff_preview_text = diff_result.stdout_text;
   }
 
   std::lock_guard<std::mutex> lock(controller.mutex);
   controller.runtime.git_entries = std::move(git_entries);
+  controller.runtime.git_status_text = result.stdout_text;
   if (controller.runtime.git_entries.empty()) {
     controller.runtime.selected_git_index = 0;
   } else if (controller.runtime.selected_git_index >= controller.runtime.git_entries.size()) {
     controller.runtime.selected_git_index = controller.runtime.git_entries.size() - 1;
   }
   controller.runtime.diff_hunks = std::move(diff_hunks);
+  controller.runtime.diff_preview_text = std::move(diff_preview_text);
   if (controller.runtime.diff_hunks.empty()) {
     controller.runtime.selected_diff_hunk = 0;
   } else if (controller.runtime.selected_diff_hunk >= controller.runtime.diff_hunks.size()) {

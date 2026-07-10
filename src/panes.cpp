@@ -343,11 +343,10 @@ std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
   if (!caps.git) {
     return {"git missing from PATH", "Status and diff panes are disabled"};
   }
-  auto result = run_command({"git", "-C", state.root.string(), "status", "--short", "--branch"}, state.root);
-  if (!result) {
+  if (runtime.git_status_text.empty()) {
     return {"git status unavailable", "Repository metadata could not be read"};
   }
-  auto lines = split_lines(result->stdout_text, 3);
+  auto lines = split_lines(runtime.git_status_text, 3);
   if (lines.empty()) {
     lines.push_back("Working tree clean");
   }
@@ -527,42 +526,36 @@ std::vector<std::string> lines_for_diff(const WorkspacePersistentState& state,
   if (!runtime.git_entries.empty() && runtime.selected_git_index < runtime.git_entries.size()) {
     const auto& selected = runtime.git_entries[runtime.selected_git_index];
     const auto staged = selected.index_status != " " && selected.index_status != "?";
-    const auto diff_argv = staged ? std::vector<std::string>{"git", "-C", state.root.string(), "diff", "--cached", "--", selected.path}
-                                  : std::vector<std::string>{"git", "-C", state.root.string(), "diff", "--", selected.path};
-    auto result = run_command(diff_argv, state.root, std::chrono::milliseconds(400));
-    if (result) {
-      auto lines = split_lines(result->stdout_text, 18);
-      if (!lines.empty()) {
-        lines.insert(lines.begin(), "selected: " + selected.path);
-        lines.insert(lines.begin() + 1, staged ? "view: staged diff" : "view: unstaged diff");
-        lines.insert(lines.begin() + 2,
-                     "hunks: " + std::to_string(runtime.diff_hunks.size()) + "  [/] move  enter open at hunk");
-        if (!runtime.diff_hunks.empty() && runtime.selected_diff_hunk < runtime.diff_hunks.size()) {
-          const auto& hunk = runtime.diff_hunks[runtime.selected_diff_hunk];
-          lines.insert(lines.begin() + 3,
-                       "focus: hunk " + std::to_string(runtime.selected_diff_hunk + 1) + " at line " +
-                           std::to_string(std::max(hunk.new_start, 1)));
-        }
-        for (auto& line : lines) {
-          if (line.starts_with("@@")) {
-            auto it = std::find_if(runtime.diff_hunks.begin(),
-                                   runtime.diff_hunks.end(),
-                                   [&](const DiffHunk& hunk) { return hunk.header == line; });
-            if (it != runtime.diff_hunks.end()) {
-              const auto index = static_cast<std::size_t>(std::distance(runtime.diff_hunks.begin(), it));
-              line = (index == runtime.selected_diff_hunk ? "> " : "  ") + line;
-            }
+    auto lines = split_lines(runtime.diff_preview_text, 18);
+    if (!lines.empty()) {
+      lines.insert(lines.begin(), "selected: " + selected.path);
+      lines.insert(lines.begin() + 1, staged ? "view: staged diff" : "view: unstaged diff");
+      lines.insert(lines.begin() + 2,
+                   "hunks: " + std::to_string(runtime.diff_hunks.size()) + "  [/] move  enter open at hunk");
+      if (!runtime.diff_hunks.empty() && runtime.selected_diff_hunk < runtime.diff_hunks.size()) {
+        const auto& hunk = runtime.diff_hunks[runtime.selected_diff_hunk];
+        lines.insert(lines.begin() + 3,
+                     "focus: hunk " + std::to_string(runtime.selected_diff_hunk + 1) + " at line " +
+                         std::to_string(std::max(hunk.new_start, 1)));
+      }
+      for (auto& line : lines) {
+        if (line.starts_with("@@")) {
+          auto it = std::find_if(runtime.diff_hunks.begin(),
+                                 runtime.diff_hunks.end(),
+                                 [&](const DiffHunk& hunk) { return hunk.header == line; });
+          if (it != runtime.diff_hunks.end()) {
+            const auto index = static_cast<std::size_t>(std::distance(runtime.diff_hunks.begin(), it));
+            line = (index == runtime.selected_diff_hunk ? "> " : "  ") + line;
           }
         }
-        return lines;
       }
+      return lines;
     }
   }
-  auto result = run_command({"git", "-C", state.root.string(), "diff", "--stat", "--compact-summary"}, state.root);
-  if (!result) {
+  if (runtime.diff_preview_text.empty()) {
     return {"git diff unavailable", "Repository metadata could not be read"};
   }
-  auto lines = split_lines(result->stdout_text, 5);
+  auto lines = split_lines(runtime.diff_preview_text, 5);
   if (lines.empty()) {
     lines.push_back("No unstaged diff");
   }

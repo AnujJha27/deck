@@ -27,6 +27,7 @@ Last updated: 2026-07-10
 - Finance alerts can now also be added in-app from the Finance tab and persisted back to `.deck/alerts.txt`.
 - The workspace summary now calls out safe-mode behavior and degraded capabilities per tab instead of leaving missing tools/providers implicit.
 - The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
+- Git status and diff pane redraws now reuse cached refresh-time command output instead of shelling out on every render.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
 - Review tabs now support explicit file/hunk diff navigation through both keyboard shortcuts and palette commands.
@@ -55,7 +56,7 @@ Last updated: 2026-07-10
 
 ## Known issues
 
-- The UI can still feel laggy when switching tabs or forcing repeated redraws.
+- The UI can still feel laggy in broader cases, but Git-pane redraw hot paths are now cached instead of spawning Git each frame.
 
 ## Current MVP assessment
 

@@ -1,92 +1,48 @@
 # deck
 
-Fresh C++ reboot scaffold for the `deck` workstation MVP described in the handoff plan.
+`deck` is a terminal workspace for development and market monitoring. It combines a multi-pane shell, Git review tools, workspace notes, and a finance dashboard inside a single fullscreen TUI built in C++ with FTXUI.
 
-## Project tracking docs
+## What it does
 
-- `VISION.md` explains the product target and why `deck` exists.
-- `ARCHITECTURE.md` describes the current system boundaries and near-term technical direction.
-- `MVP_PLAN.md` defines the target scope for the first usable version.
-- `RECOVERED_PLAN.md` captures the earlier Codex planning thread recovered from local history.
-- `IMPLEMENTATION_STATUS.md` records what is already built versus still scaffolded.
-- `ROADMAP.md` tracks the next implementation slices as a checklist.
-- `BACKLOG.md` keeps non-immediate work visible without bloating the roadmap.
-- `DECISIONS.md` records confirmed product and engineering decisions.
+- run and rerun workspace commands
+- inspect recent task output
+- search the workspace with `rg`
+- review Git status and diffs from inside the shell
+- navigate files and open them in `nvim`
+- manage a watchlist with local or Finnhub-backed quotes
+- ingest portfolio positions and balances from CSV
+- track threshold alerts
+- keep context-linked notes and a general scratchpad
 
-## Current shape
+## Current features
 
-This repository now contains:
+### Workspace shell
 
-- a compileable C++20 core library
-- a real `FTXUI` fullscreen shell with tab switching and pane-shaped split rendering
-- CLI entry points for `deck`, `deck doctor`, `deck workspace open`, `deck workspace list`, `deck workspace reset-layout`, and `deck --safe`
-- persisted multi-tab workspace state with per-tab split layouts and focused panes
-- SQLite-backed workspace state storage under `.deck/state.db`
-- a typed event bus
-- environment capability detection
-- a non-PTY process runner for safe argv-based command execution
-- a lightweight `:` command palette for run/search/git/finance actions
-- review-tab Git actions for refresh, file selection, stage/unstage, selected-file diff, and commit message entry
-- review-tab diff navigation across changed files and hunks from both keys and palette commands
-- context-linked notes for selected files, search results, and finance symbols, stored under `.deck/notes/`
-- a dedicated Notes tab that combines the context-note view with a workspace-local scratchpad backed by `.deck/scratch.md`
-- finance workspace scaffolding with watchlist and local data-source discovery
-- header-driven CSV ingestion for positions and balances
-- a portfolio summary with tracked totals, cash, market value, and daily change when quotes are available
-- extra portfolio analytics for unrealized P/L and daily movers when quotes are available
-- pluggable quote refresh that can use local CSV quote rows before falling back to Finnhub
-- threshold alerts loaded from `.deck/alerts.txt`
-- clearer safe-mode and degraded-capability messaging in the workspace summary
-- legacy SQLite schema for papers, paper tags, and paper bookmarks still present during the product pivot
-- unit-style tests for split tree persistence, workspace persistence, event routing, and `PaperAnchor` serialization
+- fullscreen FTXUI interface with persistent tabs and split panes
+- command palette for common actions
+- status footer and degraded-capability messaging
+- safe mode for reduced terminal interaction
 
-## What is still scaffolded
+### Development workflow
 
-PTY task execution and richer finance analytics/provider support are not fully implemented yet. The core abstractions are in place so those subsystems can be added without reworking the workspace model.
+- file list with keyboard navigation
+- `rg`-based search with in-app query entry
+- safe editor handoff into `nvim`
+- Git status, diff, stage, unstage, and commit actions
+- diff navigation across files and hunks
 
-## Notes
+### Finance workspace
 
-Context-linked notes now follow the current file, search result, or market symbol selection:
+- watchlist discovery from `.deck/watchlist.txt`
+- quote refresh from local CSV data and optional Finnhub fallback
+- CSV ingestion for positions and balances
+- portfolio totals, cash, daily change, unrealized P/L, and basic movers
+- threshold alerts loaded from or written to `.deck/alerts.txt`
 
-- `E` starts editing the current context note from any tab
-- `Ctrl+S` saves the current context note under `.deck/notes/`
-- `Ctrl+R` reloads the current context note from disk
-- `Esc` leaves note edit mode
+### Notes
 
-Inside the Finance tab, `e` is a shortcut for editing the selected symbol note.
-
-## Scratchpad
-
-The dedicated `Notes` tab also provides a workspace-local scratchpad:
-
-- `e` starts inline editing
-- `Ctrl+S` saves to `.deck/scratch.md`
-- `Ctrl+R` reloads from disk
-- `Esc` leaves edit mode
-
-## Finance API setup
-
-For live quote refresh in the Finance tab, either export:
-
-```bash
-export FINNHUB_API_KEY=your_key_here
-```
-
-or place this in the `deck` launch directory `.env` file:
-
-```bash
-FINNHUB_API_KEY=your_key_here
-```
-
-Inside the Finance tab:
-
-- `a` opens ticker input and persists it to `.deck/watchlist.txt`
-- `A` opens alert input and persists a threshold rule to `.deck/alerts.txt`
-- `x` refreshes quotes when no task is running
-- local `.csv` files with headers like `symbol,quantity,cost_basis_total` or `account,amount,currency` are discovered automatically
-- local quote CSVs with headers like `symbol,price,change,percent_change` can satisfy watchlist refresh without an API key
-- alerts are loaded from `.deck/alerts.txt` using lines like `NVDA >= 1500 trim position` or `SPY <= 500 hedge`
-- the command palette also accepts `alert <ticker> >= <price> [note]`
+- context-linked notes for selected files, search results, and market symbols
+- workspace scratchpad stored in `.deck/scratch.md`
 
 ## Build
 
@@ -95,3 +51,89 @@ cmake -S . -B build
 cmake --build build
 ctest --test-dir build
 ```
+
+## Run
+
+```bash
+./build/deck
+```
+
+Useful variants:
+
+```bash
+./build/deck --safe
+./build/deck doctor
+./build/deck workspace list
+./build/deck workspace open .
+```
+
+## Finance setup
+
+For live API-backed quotes, set:
+
+```bash
+export FINNHUB_API_KEY=your_key_here
+```
+
+or place it in `.env`:
+
+```bash
+FINNHUB_API_KEY=your_key_here
+```
+
+Local quote CSVs can also provide prices without an API key. Example headers:
+
+```text
+symbol,price,change,percent_change
+```
+
+Position CSVs can use headers such as:
+
+```text
+symbol,quantity,cost_basis_total
+```
+
+Balance CSVs can use headers such as:
+
+```text
+account,amount,currency
+```
+
+## In-app controls
+
+Common controls:
+
+- `:` open command palette
+- `q` quit
+- `r` run recent command
+- `R` rerun latest task
+- `x` refresh current surface or cancel active task
+
+Finance controls:
+
+- `a` add ticker to watchlist
+- `A` add alert rule
+- `e` edit note for selected symbol
+
+Notes controls:
+
+- `E` edit current context note
+- `Ctrl+S` save
+- `Ctrl+R` reload
+- `Esc` stop editing
+
+## Workspace files
+
+`deck` stores local workspace state under `.deck/`:
+
+- `.deck/state.db`: SQLite-backed state
+- `.deck/watchlist.txt`: tracked symbols
+- `.deck/alerts.txt`: threshold rules
+- `.deck/scratch.md`: scratchpad
+- `.deck/notes/`: context-linked notes
+
+## Project docs
+
+- `IMPLEMENTATION_STATUS.md` for current status
+- `ROADMAP.md` for planned work
+- `ARCHITECTURE.md` for structure and design notes
