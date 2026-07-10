@@ -709,6 +709,82 @@ std::vector<BalanceEntry> load_balances_from_csv(const std::filesystem::path& ro
   return balances;
 }
 
+std::unordered_map<std::string, MarketQuote> load_local_quotes_from_csv(const std::filesystem::path& root,
+                                                                        const std::vector<std::string>& sources) {
+  std::unordered_map<std::string, MarketQuote> quotes;
+  for (const auto& source : sources) {
+    if (std::filesystem::path(source).extension() != ".csv") {
+      continue;
+    }
+    std::ifstream in(root / source);
+    if (!in) {
+      continue;
+    }
+    std::string header_line;
+    if (!std::getline(in, header_line)) {
+      continue;
+    }
+    auto headers = split_csv_row(header_line);
+    for (auto& header : headers) {
+      header = lower_copy(header);
+    }
+    const int symbol_idx = header_index(headers, {"symbol", "ticker", "asset"});
+    const int price_idx = header_index(headers, {"price", "last_price", "last", "close"});
+    if (symbol_idx < 0 || price_idx < 0) {
+      continue;
+    }
+    const int change_idx = header_index(headers, {"change", "daily_change"});
+    const int percent_idx = header_index(headers, {"percent_change", "pct_change", "change_percent"});
+    std::string row;
+    while (std::getline(in, row)) {
+      auto cells = split_csv_row(row);
+      if (symbol_idx >= static_cast<int>(cells.size()) || price_idx >= static_cast<int>(cells.size())) {
+        continue;
+      }
+      auto symbol = trim_copy(cells[static_cast<std::size_t>(symbol_idx)]);
+      std::transform(symbol.begin(),
+                     symbol.end(),
+                     symbol.begin(),
+                     [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+      auto price = parse_decimal(cells[static_cast<std::size_t>(price_idx)]);
+      if (symbol.empty() || !price) {
+        continue;
+      }
+      MarketQuote quote;
+      quote.symbol = symbol;
+      quote.has_data = *price > 0.0;
+      quote.last_price = *price;
+      quote.provider = "local-csv";
+      quote.status = quote.has_data ? "ok" : "provider returned no price";
+      if (change_idx >= 0 && change_idx < static_cast<int>(cells.size())) {
+        if (auto value = parse_decimal(cells[static_cast<std::size_t>(change_idx)])) {
+          quote.change = *value;
+        }
+      }
+      if (percent_idx >= 0 && percent_idx < static_cast<int>(cells.size())) {
+        if (auto value = parse_decimal(cells[static_cast<std::size_t>(percent_idx)])) {
+          quote.percent_change = *value;
+        }
+      }
+      quotes[symbol] = quote;
+    }
+  }
+  return quotes;
+}
+
+std::string market_provider_label(bool has_local_quotes, bool has_finnhub) {
+  if (has_local_quotes && has_finnhub) {
+    return "local-csv+finnhub";
+  }
+  if (has_local_quotes) {
+    return "local-csv";
+  }
+  if (has_finnhub) {
+    return "finnhub";
+  }
+  return "none";
+}
+
 std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtime) {
   std::vector<std::string> lines;
   lines.push_back("Focused symbol: " + (runtime.current_market_symbol.empty() ? std::string("none")
@@ -856,6 +932,7 @@ MarketQuote fetch_finnhub_quote(const std::filesystem::path& root,
   quote.change = change;
   quote.percent_change = percent;
   quote.timestamp = static_cast<long long>(timestamp);
+  quote.provider = "finnhub";
   quote.status = quote.has_data ? "ok" : "provider returned no price";
   return quote;
 }
@@ -870,8 +947,10 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
   runtime.finance_data_sources = discover_finance_sources(persistent.root);
   runtime.positions = load_positions_from_csv(persistent.root, runtime.finance_data_sources);
   runtime.balances = load_balances_from_csv(persistent.root, runtime.finance_data_sources);
-  runtime.market_data_enabled = caps.curl && caps.finnhub_api_key;
-  runtime.market_data_provider = runtime.market_data_enabled ? "finnhub" : "none";
+  const auto local_quotes = load_local_quotes_from_csv(persistent.root, runtime.finance_data_sources);
+  runtime.market_quotes = local_quotes;
+  runtime.market_data_enabled = !local_quotes.empty() || (caps.curl && caps.finnhub_api_key);
+  runtime.market_data_provider = market_provider_label(!local_quotes.empty(), caps.curl && caps.finnhub_api_key);
   runtime.scratch_editor.buffer = load_scratch_buffer(persistent.root);
   runtime.scratch_editor.cursor = runtime.scratch_editor.buffer.size();
   if (!runtime.market_entries.empty()) {
@@ -927,13 +1006,11 @@ void refresh_market_quotes(ScreenInteractive& screen,
                            ShellTaskController& controller,
                            const WorkspacePersistentState& persistent,
                            const EnvironmentCapabilities& caps) {
-  if (!caps.curl) {
-    set_status(controller, "curl missing for market data");
-    return;
-  }
-  const auto token = resolve_env_var(persistent.root, "FINNHUB_API_KEY");
-  if (!token) {
-    set_status(controller, "FINNHUB_API_KEY missing");
+  const auto token = (caps.curl && caps.finnhub_api_key) ? resolve_env_var(persistent.root, "FINNHUB_API_KEY")
+                                                         : std::nullopt;
+  const auto local_quotes = load_local_quotes_from_csv(persistent.root, discover_finance_sources(persistent.root));
+  if (local_quotes.empty() && !token) {
+    set_status(controller, caps.curl ? "No local quote CSV or FINNHUB_API_KEY found" : "No local quote CSV found");
     return;
   }
 
@@ -949,15 +1026,30 @@ void refresh_market_quotes(ScreenInteractive& screen,
   screen.PostEvent(ftxui::Event::Custom);
 
   std::unordered_map<std::string, MarketQuote> quotes;
+  bool used_local = false;
+  bool used_finnhub = false;
   for (const auto& market : watchlist) {
-    quotes[market.symbol] = fetch_finnhub_quote(persistent.root, *token, market.symbol);
+    if (auto found = local_quotes.find(market.symbol); found != local_quotes.end()) {
+      quotes[market.symbol] = found->second;
+      used_local = true;
+      continue;
+    }
+    if (token) {
+      quotes[market.symbol] = fetch_finnhub_quote(persistent.root, *token, market.symbol);
+      used_finnhub = true;
+      continue;
+    }
+    MarketQuote quote;
+    quote.symbol = market.symbol;
+    quote.status = "no provider for symbol";
+    quotes[market.symbol] = quote;
   }
 
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
     controller.runtime.market_quotes = std::move(quotes);
-    controller.runtime.market_data_enabled = true;
-    controller.runtime.market_data_provider = "finnhub";
+    controller.runtime.market_data_enabled = used_local || used_finnhub;
+    controller.runtime.market_data_provider = market_provider_label(used_local, used_finnhub);
     controller.runtime.market_data_refresh_in_progress = false;
     controller.runtime.portfolio_lines = portfolio_lines_for(controller.runtime);
     controller.runtime.status_message = "Market data refreshed";
@@ -1016,7 +1108,7 @@ void add_watchlist_symbol(ScreenInteractive& screen,
 
   invalidate_pane_data_snapshot(persistent.root);
   screen.PostEvent(ftxui::Event::Custom);
-  if (changed && caps.curl && caps.finnhub_api_key) {
+  if (changed) {
     refresh_market_quotes(screen, controller, persistent, caps);
   }
 }
@@ -1767,7 +1859,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   });
 
   auto screen = ScreenInteractive::Fullscreen();
-  if (caps.curl && caps.finnhub_api_key) {
+  if (controller.runtime.market_data_enabled) {
     controller.market_worker = std::jthread([&](std::stop_token stop_token) {
       while (!stop_token.stop_requested()) {
         refresh_market_quotes(screen, controller, state, caps);

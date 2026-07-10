@@ -22,6 +22,7 @@ Last updated: 2026-07-10
 - Direct API-backed quote refresh is now wired through Finnhub when `FINNHUB_API_KEY` and `curl` are available.
 - Finance CSV ingestion now loads positions and balances from header-driven local `.csv` files into runtime state.
 - The Portfolio pane now summarizes tracked positions, balances, cost basis, cash, market value, and daily change from available quotes.
+- Market refresh now supports pluggable local/external sources by preferring local CSV quotes and falling back to Finnhub when available.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
 - Context-linked notes are now available for selected files, search results, and finance symbols, with note files persisted under `.deck/notes/`.
@@ -37,7 +38,7 @@ Last updated: 2026-07-10
 - File navigation is keyboard-driven and flat, but there is no true tree browser yet.
 - Git and Diff panes now support basic file-level staging, unstaging, selected-file diff inspection, and commit submission, but not hunk-level selection or branch management.
 - The command palette covers core actions, but it is still a typed overlay rather than a richer fuzzy picker or full command router.
-- Finance panes have quote refresh, CSV ingestion, and portfolio summary metrics, but alerting and broader provider support are still missing.
+- Finance panes have quote refresh, CSV ingestion, and portfolio summary metrics, but alerting is still missing.
 - The shell has multi-tab structure and persistence, but tab-local interactivity remains thin.
 
 ## Not implemented yet
@@ -46,7 +47,7 @@ Last updated: 2026-07-10
 - Live task log streaming.
 - Interactive file browser actions.
 - Diff navigation.
-- Additional providers, alerts, and portfolio analytics.
+- Alerts and richer portfolio analytics.
 
 ## Known issues
 

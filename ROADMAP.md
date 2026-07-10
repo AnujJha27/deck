@@ -36,7 +36,7 @@ Last updated: 2026-07-10
 - [x] Add direct API-backed quote refresh using a configured provider key.
 - [x] Ingest positions and balances from CSV.
 - [x] Add a portfolio summary with totals, cash, and daily change.
-- [ ] Add watchlist quote refresh from pluggable local/external sources beyond the first provider.
+- [x] Add watchlist quote refresh from pluggable local/external sources beyond the first provider.
 - [ ] Add alerts and threshold tracking.
 
 ## Shell polish

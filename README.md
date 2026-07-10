@@ -32,6 +32,7 @@ This repository now contains:
 - finance workspace scaffolding with watchlist and local data-source discovery
 - header-driven CSV ingestion for positions and balances
 - a portfolio summary with tracked totals, cash, market value, and daily change when quotes are available
+- pluggable quote refresh that can use local CSV quote rows before falling back to Finnhub
 - legacy SQLite schema for papers, paper tags, and paper bookmarks still present during the product pivot
 - unit-style tests for split tree persistence, workspace persistence, event routing, and `PaperAnchor` serialization
 
@@ -78,6 +79,7 @@ Inside the Finance tab:
 - `a` opens ticker input and persists it to `.deck/watchlist.txt`
 - `x` refreshes quotes when no task is running
 - local `.csv` files with headers like `symbol,quantity,cost_basis_total` or `account,amount,currency` are discovered automatically
+- local quote CSVs with headers like `symbol,price,change,percent_change` can satisfy watchlist refresh without an API key
 
 ## Build
 
