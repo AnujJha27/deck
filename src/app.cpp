@@ -396,6 +396,11 @@ struct TickerOverlayState {
   std::string symbol;
 };
 
+struct AlertOverlayState {
+  bool active = false;
+  std::string rule;
+};
+
 struct CommandOverlayState {
   bool active = false;
   std::string command;
@@ -772,6 +777,38 @@ std::unordered_map<std::string, MarketQuote> load_local_quotes_from_csv(const st
   return quotes;
 }
 
+std::optional<AlertRule> parse_alert_rule_line(std::string line, const std::string& source) {
+  auto cleaned = trim_copy(std::move(line));
+  if (cleaned.empty() || cleaned[0] == '#') {
+    return std::nullopt;
+  }
+
+  std::istringstream row(cleaned);
+  std::string symbol;
+  std::string op;
+  std::string threshold_token;
+  if (!(row >> symbol >> op >> threshold_token)) {
+    return std::nullopt;
+  }
+  auto threshold = parse_decimal(threshold_token);
+  if (!threshold) {
+    return std::nullopt;
+  }
+
+  AlertRule rule;
+  std::transform(symbol.begin(),
+                 symbol.end(),
+                 symbol.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+  rule.symbol = symbol;
+  rule.threshold = *threshold;
+  rule.source = source;
+  rule.direction = (op == "<=" || op == "<") ? AlertDirection::BelowOrEqual : AlertDirection::AboveOrEqual;
+  std::getline(row, rule.note);
+  rule.note = trim_copy(rule.note);
+  return rule;
+}
+
 std::vector<AlertRule> load_alert_rules(const std::filesystem::path& root) {
   std::vector<AlertRule> rules;
   std::ifstream in(root / ".deck" / "alerts.txt");
@@ -780,37 +817,29 @@ std::vector<AlertRule> load_alert_rules(const std::filesystem::path& root) {
   }
   std::string line;
   while (std::getline(in, line)) {
-    auto cleaned = trim_copy(line);
-    if (cleaned.empty() || cleaned[0] == '#') {
-      continue;
+    if (auto rule = parse_alert_rule_line(line, ".deck/alerts.txt")) {
+      rules.push_back(std::move(*rule));
     }
-
-    std::istringstream row(cleaned);
-    std::string symbol;
-    std::string op;
-    std::string threshold_token;
-    if (!(row >> symbol >> op >> threshold_token)) {
-      continue;
-    }
-    auto threshold = parse_decimal(threshold_token);
-    if (!threshold) {
-      continue;
-    }
-
-    AlertRule rule;
-    std::transform(symbol.begin(),
-                   symbol.end(),
-                   symbol.begin(),
-                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
-    rule.symbol = symbol;
-    rule.threshold = *threshold;
-    rule.source = ".deck/alerts.txt";
-    rule.direction = (op == "<=" || op == "<") ? AlertDirection::BelowOrEqual : AlertDirection::AboveOrEqual;
-    std::getline(row, rule.note);
-    rule.note = trim_copy(rule.note);
-    rules.push_back(std::move(rule));
   }
   return rules;
+}
+
+bool persist_alert_rules(const std::filesystem::path& root, const std::vector<AlertRule>& rules) {
+  std::error_code ec;
+  std::filesystem::create_directories(root / ".deck", ec);
+  std::ofstream out(root / ".deck" / "alerts.txt", std::ios::trunc);
+  if (!out) {
+    return false;
+  }
+  for (const auto& rule : rules) {
+    out << rule.symbol << " " << (rule.direction == AlertDirection::AboveOrEqual ? ">=" : "<=") << " "
+        << rule.threshold;
+    if (!rule.note.empty()) {
+      out << " " << rule.note;
+    }
+    out << "\n";
+  }
+  return true;
 }
 
 std::vector<TriggeredAlert> evaluate_alerts(const std::vector<AlertRule>& rules,
@@ -1264,6 +1293,56 @@ void add_watchlist_symbol(ScreenInteractive& screen,
   }
 }
 
+void add_alert_rule(ScreenInteractive& screen,
+                    ShellTaskController& controller,
+                    const WorkspacePersistentState& persistent,
+                    const EnvironmentCapabilities& caps,
+                    std::string rule_text) {
+  auto parsed = parse_alert_rule_line(std::move(rule_text), ".deck/alerts.txt");
+  if (!parsed) {
+    set_status(controller, "Usage: <SYMBOL> >= <price> [note]");
+    screen.PostEvent(ftxui::Event::Custom);
+    return;
+  }
+
+  bool changed = false;
+  {
+    std::lock_guard<std::mutex> lock(controller.mutex);
+    auto duplicate = std::find_if(controller.runtime.alert_rules.begin(),
+                                  controller.runtime.alert_rules.end(),
+                                  [&](const AlertRule& rule) {
+                                    return rule.symbol == parsed->symbol && rule.direction == parsed->direction &&
+                                           rule.threshold == parsed->threshold && rule.note == parsed->note;
+                                  });
+    if (duplicate == controller.runtime.alert_rules.end()) {
+      controller.runtime.alert_rules.push_back(*parsed);
+      controller.runtime.triggered_alerts =
+          evaluate_alerts(controller.runtime.alert_rules, controller.runtime.market_quotes);
+      controller.runtime.portfolio_lines = portfolio_lines_for(controller.runtime);
+      controller.runtime.status_message = "Added alert for " + parsed->symbol;
+      changed = true;
+    } else {
+      controller.runtime.status_message = "Alert already exists for " + parsed->symbol;
+    }
+  }
+
+  if (changed) {
+    std::vector<AlertRule> rules;
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      rules = controller.runtime.alert_rules;
+    }
+    if (!persist_alert_rules(persistent.root, rules)) {
+      set_status(controller, "Failed to persist alerts");
+    } else {
+      refresh_market_quotes(screen, controller, persistent, caps);
+    }
+  }
+
+  invalidate_pane_data_snapshot(persistent.root);
+  screen.PostEvent(ftxui::Event::Custom);
+}
+
 void set_status(ShellTaskController& controller, const std::string& message) {
   std::lock_guard<std::mutex> lock(controller.mutex);
   controller.runtime.status_message = message;
@@ -1340,6 +1419,7 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
   if (role == TabRole::Finance) {
     suggestions.push_back("refresh");
     suggestions.push_back("add <ticker>");
+    suggestions.push_back("alert <ticker> >= <price> [note]");
     suggestions.push_back("focus <ticker>");
   } else {
     suggestions.push_back("refresh");
@@ -1716,6 +1796,21 @@ bool execute_palette_command(ScreenInteractive& screen,
     add_watchlist_symbol(screen, controller, state, caps, argv[1]);
     return true;
   }
+  if (command == "alert") {
+    if (current_role != TabRole::Finance) {
+      set_status(controller, "alert is only available in Finance");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    if (argv.size() < 4) {
+      set_status(controller, "Usage: alert <ticker> >= <price> [note]");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    auto rule = trim_copy(command_text.substr(command_text.find_first_not_of(" \t", command.size())));
+    add_alert_rule(screen, controller, state, caps, rule);
+    return true;
+  }
   if (command == "focus") {
     if (current_role != TabRole::Finance) {
       set_status(controller, "focus is only available in Finance");
@@ -1873,6 +1968,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   controller.runtime.visible_tab = state.focused_tab;
   SearchOverlayState search_overlay;
   TickerOverlayState ticker_overlay;
+  AlertOverlayState alert_overlay;
   CommandOverlayState command_overlay;
   CommitOverlayState commit_overlay;
 
@@ -1910,6 +2006,8 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
                text("R rerun"),
                separator(),
                text("a add"),
+               separator(),
+               text("A alert"),
                separator(),
                text("s/u git"),
                separator(),
@@ -1966,6 +2064,19 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
               text("Type symbol and press Enter"),
               separator(),
               text(ticker_overlay.symbol.empty() ? std::string(" ") : ticker_overlay.symbol),
+          }));
+      content = dbox({
+          content,
+          overlay | center,
+      });
+    }
+    if (alert_overlay.active) {
+      auto overlay = window(
+          text("Add alert"),
+          vbox({
+              text("Format: NVDA >= 1500 trim position"),
+              separator(),
+              text(alert_overlay.rule.empty() ? std::string(" ") : alert_overlay.rule),
           }));
       content = dbox({
           content,
@@ -2113,6 +2224,29 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       }
       if (event.is_character()) {
         ticker_overlay.symbol += event.character();
+        return true;
+      }
+    }
+    if (alert_overlay.active) {
+      if (event == ftxui::Event::Escape) {
+        alert_overlay.active = false;
+        alert_overlay.rule.clear();
+        return true;
+      }
+      if (event == ftxui::Event::Return) {
+        alert_overlay.active = false;
+        add_alert_rule(screen, controller, state, caps, alert_overlay.rule);
+        alert_overlay.rule.clear();
+        return true;
+      }
+      if (event == ftxui::Event::Backspace) {
+        if (!alert_overlay.rule.empty()) {
+          alert_overlay.rule.pop_back();
+        }
+        return true;
+      }
+      if (event.is_character()) {
+        alert_overlay.rule += event.character();
         return true;
       }
     }
@@ -2449,6 +2583,17 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       if (role == TabRole::Finance) {
         ticker_overlay.active = true;
         ticker_overlay.symbol.clear();
+        return true;
+      }
+    }
+    if (event == ftxui::Event::Character('A')) {
+      const auto role = [&] {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        return state.tabs[controller.runtime.visible_tab].role;
+      }();
+      if (role == TabRole::Finance) {
+        alert_overlay.active = true;
+        alert_overlay.rule.clear();
         return true;
       }
     }

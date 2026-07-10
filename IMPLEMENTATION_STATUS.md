@@ -24,6 +24,7 @@ Last updated: 2026-07-10
 - The Portfolio pane now summarizes tracked positions, balances, cost basis, cash, market value, and daily change from available quotes.
 - Market refresh now supports pluggable local/external sources by preferring local CSV quotes and falling back to Finnhub when available.
 - Threshold alerts now load from `.deck/alerts.txt`, flag matching watchlist symbols, and surface triggered messages in the Finance panes and status line.
+- Finance alerts can now also be added in-app from the Finance tab and persisted back to `.deck/alerts.txt`.
 - The workspace summary now calls out safe-mode behavior and degraded capabilities per tab instead of leaving missing tools/providers implicit.
 - The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.

@@ -80,10 +80,12 @@ FINNHUB_API_KEY=your_key_here
 Inside the Finance tab:
 
 - `a` opens ticker input and persists it to `.deck/watchlist.txt`
+- `A` opens alert input and persists a threshold rule to `.deck/alerts.txt`
 - `x` refreshes quotes when no task is running
 - local `.csv` files with headers like `symbol,quantity,cost_basis_total` or `account,amount,currency` are discovered automatically
 - local quote CSVs with headers like `symbol,price,change,percent_change` can satisfy watchlist refresh without an API key
 - alerts are loaded from `.deck/alerts.txt` using lines like `NVDA >= 1500 trim position` or `SPY <= 500 hedge`
+- the command palette also accepts `alert <ticker> >= <price> [note]`
 
 ## Build
 
