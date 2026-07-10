@@ -54,6 +54,18 @@ DECK_TEST(process_runner_supports_pty_output) {
   DECK_ASSERT(result.stderr_text.empty());
 }
 
+DECK_TEST(process_runner_writes_stdin_for_pipe_processes) {
+  deck::ProcessRunner runner;
+  deck::ProcessRequest request;
+  request.argv = {"sh", "-lc", "cat"};
+  request.stdin_text = std::string("patch-body");
+
+  auto result = runner.run(request);
+
+  DECK_ASSERT(result.exit_code == 0);
+  DECK_ASSERT(result.stdout_text == "patch-body");
+}
+
 DECK_TEST(process_runner_cancels_pty_tasks) {
   deck::ProcessRunner runner;
   deck::ProcessRequest request;

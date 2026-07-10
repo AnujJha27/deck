@@ -32,6 +32,7 @@
 - safe editor handoff into `nvim`
 - Git status, diff, stage, unstage, and commit actions
 - diff navigation across files and hunks
+- selected-hunk stage and unstage actions from the Review tab
 
 ### Finance workspace
 
@@ -112,6 +113,14 @@ Common controls:
 - `r` run recent command
 - `R` rerun latest task
 - `x` refresh current surface or cancel active task
+
+Review controls:
+
+- `s` stage selected file
+- `u` unstage selected file
+- `S` stage selected hunk from the current unstaged diff view
+- `U` unstage selected hunk from the current staged diff view
+- `[` and `]` move between hunks
 
 PTY-backed command tasks stream through the Logs pane as a single terminal-style output channel, so interactive programs keep their expected TTY behavior.
 

@@ -46,7 +46,7 @@ Last updated: 2026-07-10
 - [x] Add better safe-mode and degraded-capability explanations in the UI.
 - [x] Fix terminal shutdown so quitting never leaves mouse/escape garbage printed.
 - [x] Reduce tab-switch/render lag under repeated redraws.
-- [ ] Extend Git review beyond file-level actions into hunk-level staging.
+- [x] Extend Git review beyond file-level actions into hunk-level staging.
 - [ ] Add richer portfolio analytics and performance views.
 
 ## Exit criteria for MVP

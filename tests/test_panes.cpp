@@ -70,3 +70,24 @@ DECK_TEST(parse_diff_hunks_handles_unified_headers) {
   DECK_ASSERT(hunks[1].new_start == 41);
   DECK_ASSERT(hunks[1].new_count == 2);
 }
+
+DECK_TEST(build_patch_for_hunk_extracts_selected_hunk) {
+  const std::string input =
+      "diff --git a/src/app.cpp b/src/app.cpp\n"
+      "index 1111111..2222222 100644\n"
+      "--- a/src/app.cpp\n"
+      "+++ b/src/app.cpp\n"
+      "@@ -10,2 +10,3 @@ context\n"
+      "-old\n"
+      "+new\n"
+      " keep\n"
+      "@@ -40 +41,2 @@ more\n"
+      "-gone\n"
+      "+back\n";
+
+  auto patch = deck::build_patch_for_hunk(input, 1);
+  DECK_ASSERT(patch.has_value());
+  DECK_ASSERT(patch->find("diff --git a/src/app.cpp b/src/app.cpp") != std::string::npos);
+  DECK_ASSERT(patch->find("@@ -40 +41,2 @@ more") != std::string::npos);
+  DECK_ASSERT(patch->find("@@ -10,2 +10,3 @@ context") == std::string::npos);
+}

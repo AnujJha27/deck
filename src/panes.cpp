@@ -338,6 +338,56 @@ std::vector<DiffHunk> parse_diff_hunks_impl(const std::string& text) {
   return hunks;
 }
 
+std::optional<std::string> build_patch_for_hunk_impl(const std::string& diff_text, std::size_t hunk_index) {
+  std::istringstream in(diff_text);
+  std::vector<std::string> prefix_lines;
+  std::vector<std::string> hunk_lines;
+  std::string line;
+  std::size_t current_hunk = 0;
+  bool seen_any_hunk = false;
+  bool collecting = false;
+
+  while (std::getline(in, line)) {
+    if (line.starts_with("@@")) {
+      if (collecting) {
+        break;
+      }
+      seen_any_hunk = true;
+      if (current_hunk == hunk_index) {
+        collecting = true;
+        hunk_lines.push_back(line);
+      }
+      ++current_hunk;
+      continue;
+    }
+
+    if (collecting) {
+      if (line.starts_with("diff --git ")) {
+        break;
+      }
+      hunk_lines.push_back(line);
+      continue;
+    }
+
+    if (!seen_any_hunk) {
+      prefix_lines.push_back(line);
+    }
+  }
+
+  if (hunk_lines.empty()) {
+    return std::nullopt;
+  }
+
+  std::ostringstream patch;
+  for (const auto& prefix_line : prefix_lines) {
+    patch << prefix_line << '\n';
+  }
+  for (const auto& hunk_line : hunk_lines) {
+    patch << hunk_line << '\n';
+  }
+  return patch.str();
+}
+
 std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
                                        const WorkspaceRuntimeState& runtime,
                                        const EnvironmentCapabilities& caps) {
@@ -351,7 +401,7 @@ std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
   if (lines.empty()) {
     lines.push_back("Working tree clean");
   }
-  lines.push_back("enter refresh  s stage  u unstage  c commit  j/k move");
+  lines.push_back("enter refresh  s/u file  S/U hunk  c commit  j/k move");
   lines.push_back("changed files: " + std::to_string(runtime.git_entries.size()));
   if (!runtime.git_entries.empty()) {
     const auto begin = runtime.selected_git_index > 2 ? runtime.selected_git_index - 2 : 0;
@@ -532,7 +582,7 @@ std::vector<std::string> lines_for_diff(const WorkspacePersistentState& state,
       lines.insert(lines.begin(), "selected: " + selected.path);
       lines.insert(lines.begin() + 1, staged ? "view: staged diff" : "view: unstaged diff");
       lines.insert(lines.begin() + 2,
-                   "hunks: " + std::to_string(runtime.diff_hunks.size()) + "  [/] move  enter open at hunk");
+                   "hunks: " + std::to_string(runtime.diff_hunks.size()) + "  [/] move  S/U apply  enter open");
       if (!runtime.diff_hunks.empty() && runtime.selected_diff_hunk < runtime.diff_hunks.size()) {
         const auto& hunk = runtime.diff_hunks[runtime.selected_diff_hunk];
         lines.insert(lines.begin() + 3,
@@ -812,6 +862,10 @@ std::vector<GitStatusEntry> parse_git_status_entries(const std::string& text) {
 
 std::vector<DiffHunk> parse_diff_hunks(const std::string& text) {
   return parse_diff_hunks_impl(text);
+}
+
+std::optional<std::string> build_patch_for_hunk(const std::string& diff_text, std::size_t hunk_index) {
+  return build_patch_for_hunk_impl(diff_text, hunk_index);
 }
 
 std::unique_ptr<Pane> make_static_pane(PaneKind kind,

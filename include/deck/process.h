@@ -14,6 +14,7 @@ struct ProcessRequest {
   std::vector<std::string> argv;
   std::filesystem::path cwd;
   std::map<std::string, std::string> env;
+  std::optional<std::string> stdin_text;
   bool use_pty = false;
   std::optional<std::chrono::milliseconds> timeout;
 };

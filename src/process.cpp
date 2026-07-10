@@ -61,6 +61,7 @@ void close_pipe_pair(int pipe_pair[2]) {
 
 struct SpawnContext {
   pid_t pid = -1;
+  int stdin_pipe[2] = {-1, -1};
   int stdout_pipe[2] = {-1, -1};
   int stderr_pipe[2] = {-1, -1};
 };
@@ -93,8 +94,13 @@ bool switch_cwd_for_spawn(const ProcessRequest& request, std::filesystem::path& 
 }
 
 bool spawn_process(const ProcessRequest& request, SpawnContext& context, std::string& error_text) {
-  if (pipe(context.stdout_pipe) != 0 || pipe(context.stderr_pipe) != 0) {
+  const bool needs_stdin_pipe = request.stdin_text.has_value();
+  if ((needs_stdin_pipe && pipe(context.stdin_pipe) != 0) || pipe(context.stdout_pipe) != 0 ||
+      pipe(context.stderr_pipe) != 0) {
     error_text = std::strerror(errno);
+    if (context.stdin_pipe[0] != -1) {
+      close_pipe_pair(context.stdin_pipe);
+    }
     if (context.stdout_pipe[0] != -1) {
       close_pipe_pair(context.stdout_pipe);
     }
@@ -106,8 +112,15 @@ bool spawn_process(const ProcessRequest& request, SpawnContext& context, std::st
 
   posix_spawn_file_actions_t actions;
   posix_spawn_file_actions_init(&actions);
+  if (needs_stdin_pipe) {
+    posix_spawn_file_actions_adddup2(&actions, context.stdin_pipe[0], STDIN_FILENO);
+    posix_spawn_file_actions_addclose(&actions, context.stdin_pipe[1]);
+  }
   posix_spawn_file_actions_adddup2(&actions, context.stdout_pipe[1], STDOUT_FILENO);
   posix_spawn_file_actions_adddup2(&actions, context.stderr_pipe[1], STDERR_FILENO);
+  if (needs_stdin_pipe) {
+    posix_spawn_file_actions_addclose(&actions, context.stdin_pipe[0]);
+  }
   posix_spawn_file_actions_addclose(&actions, context.stdout_pipe[0]);
   posix_spawn_file_actions_addclose(&actions, context.stderr_pipe[0]);
 
@@ -131,6 +144,9 @@ bool spawn_process(const ProcessRequest& request, SpawnContext& context, std::st
     if (ec) {
       error_text = ec.message();
       posix_spawn_file_actions_destroy(&actions);
+      if (context.stdin_pipe[0] != -1) {
+        close_pipe_pair(context.stdin_pipe);
+      }
       close_pipe_pair(context.stdout_pipe);
       close_pipe_pair(context.stderr_pipe);
       return false;
@@ -144,18 +160,40 @@ bool spawn_process(const ProcessRequest& request, SpawnContext& context, std::st
 #endif
 
   posix_spawn_file_actions_destroy(&actions);
+  if (context.stdin_pipe[0] != -1) {
+    ::close(context.stdin_pipe[0]);
+  }
   ::close(context.stdout_pipe[1]);
   ::close(context.stderr_pipe[1]);
   if (spawn_code != 0) {
     error_text = std::strerror(spawn_code);
+    if (context.stdin_pipe[1] != -1) {
+      ::close(context.stdin_pipe[1]);
+    }
     ::close(context.stdout_pipe[0]);
     ::close(context.stderr_pipe[0]);
+    context.stdin_pipe[1] = -1;
     context.stdout_pipe[0] = -1;
     context.stderr_pipe[0] = -1;
     return false;
   }
   set_nonblocking(context.stdout_pipe[0]);
   set_nonblocking(context.stderr_pipe[0]);
+  return true;
+}
+
+bool write_all(int fd, const std::string& text) {
+  std::size_t offset = 0;
+  while (offset < text.size()) {
+    const auto wrote = ::write(fd, text.data() + offset, text.size() - offset);
+    if (wrote < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return false;
+    }
+    offset += static_cast<std::size_t>(wrote);
+  }
   return true;
 }
 
@@ -351,6 +389,19 @@ ProcessResult ProcessRunner::run_streaming(const ProcessRequest& request, const 
   SpawnContext context;
   if (!spawn_process(request, context, result.stderr_text)) {
     return result;
+  }
+  if (context.stdin_pipe[1] != -1) {
+    if (!write_all(context.stdin_pipe[1], *request.stdin_text)) {
+      result.stderr_text = "failed to write stdin";
+      ::close(context.stdin_pipe[1]);
+      terminate_process_group(context.pid);
+      waitpid(context.pid, nullptr, 0);
+      result.exit_code = 1;
+      ::close(context.stdout_pipe[0]);
+      ::close(context.stderr_pipe[0]);
+      return result;
+    }
+    ::close(context.stdin_pipe[1]);
   }
 
   const auto deadline = request.timeout ? std::chrono::steady_clock::now() + *request.timeout

@@ -1473,6 +1473,8 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
     suggestions.push_back("prev-file");
     suggestions.push_back("next-hunk");
     suggestions.push_back("prev-hunk");
+    suggestions.push_back("stage-hunk");
+    suggestions.push_back("unstage-hunk");
   } else {
     suggestions.push_back("refresh");
   }
@@ -1485,7 +1487,8 @@ void launch_task(ScreenInteractive& screen,
                  std::string name,
                  std::vector<std::string> argv,
                  bool use_pty,
-                 const EnvironmentCapabilities& caps) {
+                 const EnvironmentCapabilities& caps,
+                 std::optional<std::string> stdin_text = std::nullopt) {
   if (argv.empty()) {
     return;
   }
@@ -1504,12 +1507,14 @@ void launch_task(ScreenInteractive& screen,
   }
   screen.PostEvent(ftxui::Event::Custom);
 
-  controller.worker = std::jthread([&, task_index, name = std::move(name), argv = std::move(argv), use_pty] {
+  controller.worker =
+      std::jthread([&, task_index, name = std::move(name), argv = std::move(argv), use_pty, stdin_text = std::move(stdin_text)] {
     ProcessRunner runner;
     ProcessRequest request;
     request.argv = argv;
     request.cwd = persistent.root;
     request.use_pty = use_pty;
+    request.stdin_text = stdin_text;
 
     {
       std::lock_guard<std::mutex> lock(controller.mutex);
@@ -1569,7 +1574,7 @@ void launch_task(ScreenInteractive& screen,
     } else {
       screen.PostEvent(ftxui::Event::Custom);
     }
-  });
+      });
 }
 
 std::vector<SearchResult> parse_rg_output(const std::string& text) {
@@ -1677,6 +1682,63 @@ bool stage_selected_git_entry(ScreenInteractive& screen,
   }
   return run_git_action(
       screen, controller, state, caps, "git add", {"git", "-C", state.root.string(), "add", "--", selected->path});
+}
+
+bool apply_selected_hunk(ScreenInteractive& screen,
+                         ShellTaskController& controller,
+                         const WorkspacePersistentState& state,
+                         const EnvironmentCapabilities& caps,
+                         bool reverse) {
+  std::optional<GitStatusEntry> selected;
+  std::size_t selected_hunk_index = 0;
+  std::string diff_preview_text;
+  {
+    std::lock_guard<std::mutex> lock(controller.mutex);
+    if (!controller.runtime.git_entries.empty() && controller.runtime.selected_git_index < controller.runtime.git_entries.size()) {
+      selected = controller.runtime.git_entries[controller.runtime.selected_git_index];
+    }
+    selected_hunk_index = controller.runtime.selected_diff_hunk;
+    diff_preview_text = controller.runtime.diff_preview_text;
+  }
+  if (!selected) {
+    set_status(controller, "No git entry selected");
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
+
+  const auto showing_staged_diff = selected->index_status != " " && selected->index_status != "?";
+  if (reverse && !showing_staged_diff) {
+    set_status(controller, "Selected diff is unstaged; use stage-hunk");
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
+  if (!reverse && showing_staged_diff) {
+    set_status(controller, "Selected diff is staged; use unstage-hunk");
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
+
+  auto patch = build_patch_for_hunk(diff_preview_text, selected_hunk_index);
+  if (!patch) {
+    set_status(controller, "No diff hunk selected");
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
+
+  std::vector<std::string> argv = {"git", "-C", state.root.string(), "apply", "--cached"};
+  if (reverse) {
+    argv.push_back("--reverse");
+  }
+  argv.push_back("--");
+  launch_task(screen,
+              controller,
+              state,
+              reverse ? "git apply --cached --reverse" : "git apply --cached",
+              std::move(argv),
+              false,
+              caps,
+              std::move(patch));
+  return true;
 }
 
 bool unstage_selected_git_entry(ScreenInteractive& screen,
@@ -1803,6 +1865,12 @@ bool execute_palette_command(ScreenInteractive& screen,
                           caps,
                           "git restore --staged",
                           {"git", "-C", state.root.string(), "restore", "--staged", "--", argv[1]});
+  }
+  if (command == "stage-hunk") {
+    return apply_selected_hunk(screen, controller, state, caps, false);
+  }
+  if (command == "unstage-hunk") {
+    return apply_selected_hunk(screen, controller, state, caps, true);
   }
   if (command == "commit") {
     if (argv.size() < 2) {
@@ -2768,6 +2836,24 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       }();
       if (role == TabRole::Review) {
         return unstage_selected_git_entry(screen, controller, state, caps);
+      }
+    }
+    if (event == ftxui::Event::Character('S')) {
+      const auto role = [&] {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        return state.tabs[controller.runtime.visible_tab].role;
+      }();
+      if (role == TabRole::Review) {
+        return apply_selected_hunk(screen, controller, state, caps, false);
+      }
+    }
+    if (event == ftxui::Event::Character('U')) {
+      const auto role = [&] {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        return state.tabs[controller.runtime.visible_tab].role;
+      }();
+      if (role == TabRole::Review) {
+        return apply_selected_hunk(screen, controller, state, caps, true);
       }
     }
     if (event == ftxui::Event::Character('c')) {
