@@ -645,6 +645,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       if (!runtime.files_entries.empty()) {
         snapshot.files_lines = {
             "Root: " + state.root.string(),
+            "Browse: " + runtime.files_browser_root,
             "enter open  j/k move",
             "items: " + std::to_string(runtime.files_entries.size()),
         };
@@ -728,6 +729,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
   if (!runtime.files_entries.empty()) {
     snapshot.files_lines = {
         "Root: " + state.root.string(),
+        "Browse: " + runtime.files_browser_root,
         "enter open  j/k move",
         "items: " + std::to_string(runtime.files_entries.size()),
     };

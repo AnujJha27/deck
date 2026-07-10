@@ -162,6 +162,7 @@ struct WorkspacePersistentState {
 struct WorkspaceRuntimeState {
   TaskState active_task_state = TaskState::Idle;
   std::vector<TaskRecord> task_history;
+  std::string files_browser_root = ".";
   std::vector<FileEntry> files_entries;
   std::size_t selected_file_index = 0;
   std::string current_search_query;

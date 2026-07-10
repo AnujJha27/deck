@@ -15,7 +15,7 @@ Last updated: 2026-07-10
 - The shell can launch a recent command, rerun the latest task, cancel the active task, and stream live subprocess output into runtime task records.
 - The Search pane now supports in-app `rg` queries with bounded async results and basic result selection.
 - Selected search results can now open safely in `nvim` with line targeting through restored terminal I/O.
-- The Files pane now supports basic keyboard navigation and file-open handoff into `nvim`.
+- The Files pane now supports basic directory navigation, file-open handoff into `nvim`, and a browsable current subtree.
 - The fourth tab has been repurposed from research into a Finance workspace.
 - Finance panes now render a watchlist, a focused symbol, and discovered local CSV/SQLite/JSON data sources instead of placeholder text.
 - Finance watchlists can now be extended in-app and persisted to `.deck/watchlist.txt`.
@@ -41,7 +41,7 @@ Last updated: 2026-07-10
 
 - Terminal and Logs panes reflect real runtime task records and live non-PTY task streaming, but not a PTY session.
 - Search pane can run and display `rg` queries and open selected results in `nvim`, but broader file navigation is still missing.
-- File navigation is keyboard-driven and flat, but there is no true tree browser yet.
+- File navigation is keyboard-driven and directory-aware, but it is still not a full tree widget.
 - Git and Diff panes now support basic file-level staging, unstaging, selected-file diff inspection, and commit submission, but not hunk-level selection or branch management.
 - The command palette covers core actions, but it is still a typed overlay rather than a richer fuzzy picker or full command router.
 - Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, and threshold alerts, but richer analytics are still missing.
@@ -51,7 +51,6 @@ Last updated: 2026-07-10
 
 - PTY task execution.
 - Live task log streaming.
-- Interactive file browser actions.
 - Richer portfolio analytics.
 
 ## Known issues

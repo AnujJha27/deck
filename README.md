@@ -25,7 +25,7 @@
 
 ### Development workflow
 
-- file list with keyboard navigation
+- directory-aware file list with keyboard navigation
 - `rg`-based search with in-app query entry
 - safe editor handoff into `nvim`
 - Git status, diff, stage, unstage, and commit actions

@@ -195,7 +195,11 @@ NoteContext file_note_context(const WorkspaceRuntimeState& runtime) {
     return {};
   }
   const auto& entry = runtime.files_entries[runtime.selected_file_index];
-  return {NoteContextKind::File, entry.path, entry.path};
+  if (entry.is_directory) {
+    return {};
+  }
+  const auto full_path = (std::filesystem::path(runtime.files_browser_root) / entry.path).lexically_normal().string();
+  return {NoteContextKind::File, full_path, full_path};
 }
 
 NoteContext search_note_context(const WorkspaceRuntimeState& runtime) {
@@ -413,29 +417,50 @@ struct CommitOverlayState {
 
 void set_status(ShellTaskController& controller, const std::string& message);
 
-std::vector<FileEntry> discover_file_entries(const std::filesystem::path& root) {
+std::vector<FileEntry> discover_file_entries(const std::filesystem::path& root,
+                                             const std::filesystem::path& relative_root = ".") {
   std::vector<FileEntry> entries;
+  const auto browse_root = std::filesystem::weakly_canonical(root / relative_root);
   std::error_code ec;
-  std::filesystem::recursive_directory_iterator it(
-      root, std::filesystem::directory_options::skip_permission_denied, ec);
-  const auto end = std::filesystem::recursive_directory_iterator();
-  while (!ec && it != end) {
-    const auto path = it->path();
-    const auto name = path.filename().string();
-    if (it->is_directory(ec) && (name == ".git" || name == ".deck" || name == "build")) {
-      it.disable_recursion_pending();
-      ++it;
+  const auto canonical_root = std::filesystem::weakly_canonical(root, ec);
+  ec.clear();
+  if (browse_root != canonical_root) {
+    entries.push_back(FileEntry{"..", true});
+  }
+
+  if (!std::filesystem::exists(browse_root, ec) || !std::filesystem::is_directory(browse_root, ec)) {
+    return entries;
+  }
+
+  std::vector<FileEntry> directories;
+  std::vector<FileEntry> files;
+  for (const auto& entry : std::filesystem::directory_iterator(
+           browse_root, std::filesystem::directory_options::skip_permission_denied, ec)) {
+    if (ec) {
+      break;
+    }
+    const auto name = entry.path().filename().string();
+    if (name == ".git" || name == ".deck" || name == "build") {
       continue;
     }
-    if (it->is_regular_file(ec)) {
-      auto relative = std::filesystem::relative(path, root, ec);
-      if (!ec) {
-        entries.push_back(FileEntry{relative.string(), false});
-      }
+    auto relative = std::filesystem::relative(entry.path(), browse_root, ec);
+    if (ec) {
+      ec.clear();
+      continue;
     }
-    ++it;
+    if (entry.is_directory(ec)) {
+      directories.push_back(FileEntry{relative.string(), true});
+    } else if (entry.is_regular_file(ec)) {
+      files.push_back(FileEntry{relative.string(), false});
+    }
+    ec.clear();
   }
-  std::sort(entries.begin(), entries.end(), [](const auto& lhs, const auto& rhs) { return lhs.path < rhs.path; });
+
+  const auto sorter = [](const auto& lhs, const auto& rhs) { return lhs.path < rhs.path; };
+  std::sort(directories.begin(), directories.end(), sorter);
+  std::sort(files.begin(), files.end(), sorter);
+  entries.insert(entries.end(), directories.begin(), directories.end());
+  entries.insert(entries.end(), files.begin(), files.end());
   if (entries.size() > 64) {
     entries.resize(64);
   }
@@ -1117,7 +1142,7 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
                              bool safe_mode,
                              WorkspaceRuntimeState& runtime) {
   runtime.active_task_state = TaskState::Idle;
-  runtime.files_entries = discover_file_entries(persistent.root);
+  runtime.files_entries = discover_file_entries(persistent.root, runtime.files_browser_root);
   runtime.market_entries = discover_market_entries(persistent.root);
   runtime.finance_data_sources = discover_finance_sources(persistent.root);
   runtime.positions = load_positions_from_csv(persistent.root, runtime.finance_data_sources);
@@ -2898,17 +2923,43 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         return true;
       }
       std::optional<FileEntry> file_entry;
+      std::string files_browser_root;
       {
         std::lock_guard<std::mutex> lock(controller.mutex);
         if (!controller.runtime.files_entries.empty() &&
             controller.runtime.selected_file_index < controller.runtime.files_entries.size()) {
           file_entry = controller.runtime.files_entries[controller.runtime.selected_file_index];
+          files_browser_root = controller.runtime.files_browser_root;
           refresh_note_context(state.root, controller.runtime);
         }
       }
       if (file_entry) {
+        if (file_entry->is_directory) {
+          std::lock_guard<std::mutex> lock(controller.mutex);
+          std::filesystem::path next_root = controller.runtime.files_browser_root;
+          if (file_entry->path == "..") {
+            next_root = std::filesystem::path(controller.runtime.files_browser_root).parent_path();
+            if (next_root.empty()) {
+              next_root = ".";
+            }
+          } else {
+            next_root /= file_entry->path;
+          }
+          controller.runtime.files_browser_root = next_root.lexically_normal().string();
+          if (controller.runtime.files_browser_root.empty()) {
+            controller.runtime.files_browser_root = ".";
+          }
+          controller.runtime.files_entries = discover_file_entries(state.root, controller.runtime.files_browser_root);
+          controller.runtime.selected_file_index = 0;
+          controller.runtime.status_message = "Browsing " + controller.runtime.files_browser_root;
+          refresh_note_context(state.root, controller.runtime);
+          invalidate_pane_data_snapshot(state.root);
+          screen.PostEvent(ftxui::Event::Custom);
+          return true;
+        }
         SearchResult file_result;
-        file_result.path = file_entry->path;
+        const auto relative_file = (std::filesystem::path(files_browser_root) / file_entry->path).lexically_normal();
+        file_result.path = relative_file.string();
         file_result.line = 1;
         open_in_nvim(screen, state, file_result);
         set_status(controller, "Opened " + file_entry->path);
