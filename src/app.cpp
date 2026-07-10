@@ -908,14 +908,26 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
   double market_value_total = 0.0;
   double daily_change_total = 0.0;
   double cash_total = 0.0;
+  double quoted_cost_basis_total = 0.0;
   std::size_t positions_with_quotes = 0;
+  std::optional<std::pair<std::string, double>> best_daily_mover;
+  std::optional<std::pair<std::string, double>> worst_daily_mover;
   for (const auto& position : runtime.positions) {
     cost_basis_total += position.cost_basis_total;
     if (auto found = runtime.market_quotes.find(position.symbol); found != runtime.market_quotes.end() &&
                                                              found->second.has_data) {
-      market_value_total += position.quantity * found->second.last_price;
-      daily_change_total += position.quantity * found->second.change;
+      const auto position_market_value = position.quantity * found->second.last_price;
+      const auto position_daily_change = position.quantity * found->second.change;
+      market_value_total += position_market_value;
+      quoted_cost_basis_total += position.cost_basis_total;
+      daily_change_total += position_daily_change;
       ++positions_with_quotes;
+      if (!best_daily_mover || position_daily_change > best_daily_mover->second) {
+        best_daily_mover = {position.symbol, position_daily_change};
+      }
+      if (!worst_daily_mover || position_daily_change < worst_daily_mover->second) {
+        worst_daily_mover = {position.symbol, position_daily_change};
+      }
     }
   }
   for (const auto& balance : runtime.balances) {
@@ -940,6 +952,12 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
             << positions_with_quotes << "/" << runtime.positions.size();
     lines.push_back(summary.str());
   }
+  {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Unrealized P/L: " << (market_value_total - quoted_cost_basis_total)
+            << "  quoted cost basis: " << quoted_cost_basis_total;
+    lines.push_back(summary.str());
+  }
 
   auto focused_position = std::find_if(runtime.positions.begin(),
                                        runtime.positions.end(),
@@ -948,6 +966,27 @@ std::vector<std::string> portfolio_lines_for(const WorkspaceRuntimeState& runtim
     std::ostringstream summary;
     summary << std::fixed << std::setprecision(4) << "Focused position: " << focused_position->symbol << " qty "
             << focused_position->quantity << " cost " << focused_position->cost_basis_total;
+    lines.push_back(summary.str());
+    if (auto found = runtime.market_quotes.find(focused_position->symbol); found != runtime.market_quotes.end() &&
+                                                                found->second.has_data) {
+      const auto focused_market_value = focused_position->quantity * found->second.last_price;
+      std::ostringstream pnl;
+      pnl << std::fixed << std::setprecision(2) << "Focused unrealized: "
+          << (focused_market_value - focused_position->cost_basis_total) << "  market value: " << focused_market_value;
+      lines.push_back(pnl.str());
+    }
+  }
+
+  if (best_daily_mover) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Best daily mover: " << best_daily_mover->first << " "
+            << best_daily_mover->second;
+    lines.push_back(summary.str());
+  }
+  if (worst_daily_mover) {
+    std::ostringstream summary;
+    summary << std::fixed << std::setprecision(2) << "Worst daily mover: " << worst_daily_mover->first << " "
+            << worst_daily_mover->second;
     lines.push_back(summary.str());
   }
 

@@ -32,6 +32,7 @@ This repository now contains:
 - finance workspace scaffolding with watchlist and local data-source discovery
 - header-driven CSV ingestion for positions and balances
 - a portfolio summary with tracked totals, cash, market value, and daily change when quotes are available
+- extra portfolio analytics for unrealized P/L and daily movers when quotes are available
 - pluggable quote refresh that can use local CSV quote rows before falling back to Finnhub
 - threshold alerts loaded from `.deck/alerts.txt`
 - clearer safe-mode and degraded-capability messaging in the workspace summary

@@ -25,6 +25,7 @@ Last updated: 2026-07-10
 - Market refresh now supports pluggable local/external sources by preferring local CSV quotes and falling back to Finnhub when available.
 - Threshold alerts now load from `.deck/alerts.txt`, flag matching watchlist symbols, and surface triggered messages in the Finance panes and status line.
 - The workspace summary now calls out safe-mode behavior and degraded capabilities per tab instead of leaving missing tools/providers implicit.
+- The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
 - Context-linked notes are now available for selected files, search results, and finance symbols, with note files persisted under `.deck/notes/`.
