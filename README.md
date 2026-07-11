@@ -22,6 +22,7 @@
 - fullscreen FTXUI interface with persistent tabs and split panes
 - command palette for common actions
 - PTY-backed recent-command execution with rerun/cancel support
+- dedicated Run-tab task history explorer with selected-task logs
 - status footer and degraded-capability messaging
 - safe mode for reduced terminal interaction
 
@@ -113,6 +114,11 @@ Common controls:
 - `r` run recent command
 - `R` rerun latest task
 - `x` refresh current surface or cancel active task
+
+Run controls:
+
+- `j` and `k` move through recorded tasks in the Run tab
+- `Enter` reruns the selected task from the Run tab
 
 Review controls:
 

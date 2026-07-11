@@ -1,4 +1,5 @@
 #include "deck/workspace.h"
+#include "deck/split_tree.h"
 
 #include <functional>
 #include <stdexcept>
@@ -32,6 +33,7 @@ DECK_TEST(workspace_default_tabs) {
   auto state = deck::make_default_workspace("/tmp/deck");
   DECK_ASSERT(state.tabs.size() == 5);
   DECK_ASSERT(state.tabs[0].name == "Dev");
+  DECK_ASSERT(deck::contains_pane(state.tabs[1].layout, deck::PaneKind::Tasks));
   DECK_ASSERT(state.tabs[3].role == deck::TabRole::Finance);
   DECK_ASSERT(state.tabs[4].role == deck::TabRole::Notes);
 }

@@ -214,6 +214,14 @@ std::vector<std::string> lines_for_terminal(const WorkspacePersistentState& stat
   };
 }
 
+const TaskRecord* selected_task_record(const WorkspaceRuntimeState& runtime) {
+  if (runtime.task_history.empty()) {
+    return nullptr;
+  }
+  const auto index = std::min(runtime.selected_task_index, runtime.task_history.size() - 1);
+  return &runtime.task_history[index];
+}
+
 std::vector<std::string> lines_for_search(const FileScanSummary& files, const EnvironmentCapabilities& caps) {
   std::vector<std::string> lines = {
       caps.rg ? "rg available for workspace search" : "rg missing from PATH",
@@ -424,13 +432,12 @@ std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
 std::vector<std::string> lines_for_logs(const WorkspacePersistentState& state,
                                         const WorkspaceRuntimeState& runtime,
                                         const FileScanSummary& files) {
-  if (!runtime.task_history.empty()) {
-    const auto& task = runtime.task_history.back();
+  if (const auto* task = selected_task_record(runtime)) {
     return {
         "Selected source: " + state.selected_log_source,
-        "Latest task: " + task.name + (task.use_pty ? " [PTY]" : " [pipe]"),
-        task.stdout_excerpt.empty() ? "stdout: none" : "stdout: " + task.stdout_excerpt,
-        task.stderr_excerpt.empty() ? "stderr: none" : "stderr: " + task.stderr_excerpt,
+        "Task: " + task->name + (task->use_pty ? " [PTY]" : " [pipe]"),
+        task->stdout_excerpt.empty() ? "stdout: none" : "stdout: " + task->stdout_excerpt,
+        task->stderr_excerpt.empty() ? "stderr: none" : "stderr: " + task->stderr_excerpt,
     };
   }
   return {
@@ -439,6 +446,40 @@ std::vector<std::string> lines_for_logs(const WorkspacePersistentState& state,
       "Task history: " + std::to_string(runtime.task_history.size()) + " entries",
       "No task output captured yet",
   };
+}
+
+std::vector<std::string> lines_for_tasks(const WorkspaceRuntimeState& runtime) {
+  std::vector<std::string> lines = {
+      "Active task state: " + to_string(runtime.active_task_state),
+      "history: " + std::to_string(runtime.task_history.size()) + " tasks",
+      "controls: j/k move  enter rerun selected  R rerun latest  x cancel",
+  };
+
+  if (runtime.task_history.empty()) {
+    lines.push_back("No tasks launched yet.");
+    return lines;
+  }
+
+  const auto selected = std::min(runtime.selected_task_index, runtime.task_history.size() - 1);
+  const auto begin = selected > 2 ? selected - 2 : 0;
+  const auto end = std::min(begin + 5, runtime.task_history.size());
+  for (std::size_t i = begin; i < end; ++i) {
+    const auto& task = runtime.task_history[i];
+    const auto prefix = i == selected ? "> " : "  ";
+    auto line = prefix + task.name + " [" + to_string(task.state) + "]";
+    if (task.cancelled) {
+      line += " cancelled";
+    } else if (task.timed_out) {
+      line += " timed out";
+    } else if (task.state == TaskState::Exited || task.state == TaskState::Failed) {
+      line += " exit=" + std::to_string(task.exit_code);
+    }
+    lines.push_back(line);
+    if (i == selected && lines.size() < 12) {
+      lines.push_back("  " + task.command);
+    }
+  }
+  return lines;
 }
 
 std::vector<std::string> lines_for_markets(const WorkspaceRuntimeState& runtime) {
@@ -653,6 +694,8 @@ std::vector<std::string> lines_for_pane(PaneKind kind, const PaneDataSnapshot& s
       return snapshot.git_lines;
     case PaneKind::Logs:
       return snapshot.logs_lines;
+    case PaneKind::Tasks:
+      return snapshot.tasks_lines;
     case PaneKind::Markets:
       return snapshot.markets_lines;
     case PaneKind::Portfolio:
@@ -673,6 +716,8 @@ PaneStatus status_for_pane(PaneKind kind, const EnvironmentCapabilities& caps) {
       return caps.rg ? PaneStatus::Ready : PaneStatus::Degraded;
     case PaneKind::Git:
       return caps.git ? PaneStatus::Ready : PaneStatus::Degraded;
+    case PaneKind::Tasks:
+      return PaneStatus::Ready;
     case PaneKind::Portfolio:
       return PaneStatus::Ready;
     case PaneKind::Scratch:
@@ -723,6 +768,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       }
       snapshot.git_lines = lines_for_git(state, runtime, caps);
       snapshot.diff_lines = lines_for_diff(state, runtime, caps);
+      snapshot.tasks_lines = lines_for_tasks(runtime);
       if (!runtime.market_entries.empty()) {
         snapshot.markets_lines = {
             "Watchlist entries: " + std::to_string(runtime.market_entries.size()),
@@ -755,20 +801,9 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
         snapshot.portfolio_lines = lines_for_portfolio(runtime);
       }
       snapshot.scratch_lines = lines_for_scratch(runtime);
+      snapshot.logs_lines = lines_for_logs(state, runtime, scan_workspace_files(state.root));
       if (!runtime.status_message.empty()) {
         snapshot.logs_lines.push_back("status: " + runtime.status_message);
-      }
-      if (!runtime.task_history.empty()) {
-        const auto& task = runtime.task_history.back();
-        snapshot.logs_lines = {
-            "Selected source: " + state.selected_log_source,
-            "Latest task: " + task.name,
-            task.stdout_excerpt.empty() ? "stdout: none" : "stdout: " + task.stdout_excerpt,
-            task.stderr_excerpt.empty() ? "stderr: none" : "stderr: " + task.stderr_excerpt,
-        };
-        if (!runtime.status_message.empty()) {
-          snapshot.logs_lines.push_back("status: " + runtime.status_message);
-        }
       }
       return snapshot;
     }
@@ -807,6 +842,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
   }
   snapshot.git_lines = lines_for_git(state, runtime, caps);
   snapshot.logs_lines = lines_for_logs(state, runtime, files);
+  snapshot.tasks_lines = lines_for_tasks(runtime);
   snapshot.markets_lines = lines_for_markets(runtime);
   snapshot.portfolio_lines = lines_for_portfolio(runtime);
   if (!runtime.market_entries.empty()) {

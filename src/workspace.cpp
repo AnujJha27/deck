@@ -23,7 +23,7 @@ SplitNode run_layout() {
   return make_split(SplitAxis::Vertical,
                     0.66,
                     make_leaf(PaneKind::Terminal),
-                    make_split(SplitAxis::Horizontal, 0.5, make_leaf(PaneKind::Logs), make_leaf(PaneKind::Search)));
+                    make_split(SplitAxis::Horizontal, 0.5, make_leaf(PaneKind::Tasks), make_leaf(PaneKind::Logs)));
 }
 
 SplitNode review_layout() {

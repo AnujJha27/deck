@@ -90,6 +90,8 @@ std::string to_string(PaneKind value) {
       return "git";
     case PaneKind::Logs:
       return "logs";
+    case PaneKind::Tasks:
+      return "tasks";
     case PaneKind::Markets:
       return "markets";
     case PaneKind::Portfolio:
@@ -155,6 +157,7 @@ std::optional<PaneKind> parse_pane_kind(const std::string& value) {
                                {"search", PaneKind::Search},
                                {"git", PaneKind::Git},
                                {"logs", PaneKind::Logs},
+                               {"tasks", PaneKind::Tasks},
                                {"markets", PaneKind::Markets},
                                {"portfolio", PaneKind::Portfolio},
                                {"notes", PaneKind::Notes},

@@ -25,7 +25,6 @@ Last updated: 2026-07-10
 ## Lower priority
 
 - richer note editing beyond the first inline surface
-- process explorer pane
 - SQLite browser pane
 - HTTP client pane
 - market news/event pane

@@ -16,6 +16,7 @@ Last updated: 2026-07-10
 - [x] Introduce refresh hooks so panes can update without restarting the UI.
 - [x] Add a lightweight command palette for common actions.
 - [x] Add PTY-backed command execution for terminal-like tasks.
+- [x] Add a dedicated Run-tab task explorer for recent process history.
 
 ## Dev workflow
 

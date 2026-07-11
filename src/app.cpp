@@ -1519,6 +1519,11 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
     suggestions.push_back("prev-hunk");
     suggestions.push_back("stage-hunk");
     suggestions.push_back("unstage-hunk");
+  } else if (role == TabRole::Run) {
+    suggestions.push_back("refresh");
+    suggestions.push_back("next-task");
+    suggestions.push_back("prev-task");
+    suggestions.push_back("rerun-task");
   } else {
     suggestions.push_back("refresh");
   }
@@ -1547,6 +1552,7 @@ void launch_task(ScreenInteractive& screen,
     controller.runtime.active_task_state = TaskState::Starting;
     controller.runtime.task_history.push_back(make_task_record(name, argv, use_pty));
     task_index = controller.runtime.task_history.size() - 1;
+    controller.runtime.selected_task_index = task_index;
     controller.active_task_index = task_index;
   }
   screen.PostEvent(ftxui::Event::Custom);
@@ -1858,6 +1864,29 @@ bool execute_palette_command(ScreenInteractive& screen,
     launch_task(screen, controller, state, std::move(name), std::move(rerun_argv), use_pty, caps);
     return true;
   }
+  if (command == "rerun-task") {
+    std::vector<std::string> rerun_argv;
+    std::string name = "rerun";
+    bool use_pty = false;
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      if (!controller.runtime.task_history.empty()) {
+        const auto index =
+            std::min(controller.runtime.selected_task_index, controller.runtime.task_history.size() - 1);
+        const auto& task = controller.runtime.task_history[index];
+        rerun_argv = task.argv;
+        name = task.name + " rerun";
+        use_pty = task.use_pty;
+      }
+    }
+    if (rerun_argv.empty()) {
+      set_status(controller, "No selected task available to rerun");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    launch_task(screen, controller, state, std::move(name), std::move(rerun_argv), use_pty, caps);
+    return true;
+  }
   if (command == "search") {
     if (argv.size() < 2) {
       set_status(controller, "Usage: search <query>");
@@ -1975,6 +2004,27 @@ bool execute_palette_command(ScreenInteractive& screen,
       }
     }
     refresh_git_state(controller, state, caps);
+    invalidate_pane_data_snapshot(state.root);
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
+  if (command == "next-task" || command == "prev-task") {
+    if (current_role != TabRole::Run) {
+      set_status(controller, command + " is only available in Run");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      if (controller.runtime.task_history.empty()) {
+        controller.runtime.status_message = "No tasks available";
+      } else if (command == "next-task") {
+        controller.runtime.selected_task_index =
+            std::min(controller.runtime.selected_task_index + 1, controller.runtime.task_history.size() - 1);
+      } else if (controller.runtime.selected_task_index > 0) {
+        --controller.runtime.selected_task_index;
+      }
+    }
     invalidate_pane_data_snapshot(state.root);
     screen.PostEvent(ftxui::Event::Custom);
     return true;
@@ -2929,6 +2979,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
                 std::min(controller.runtime.selected_git_index + 1, controller.runtime.git_entries.size() - 1);
             review_changed = controller.runtime.selected_git_index != before;
           }
+        } else if (role == TabRole::Run) {
+          if (!controller.runtime.task_history.empty()) {
+            controller.runtime.selected_task_index =
+                std::min(controller.runtime.selected_task_index + 1, controller.runtime.task_history.size() - 1);
+          }
         } else if (!controller.runtime.files_entries.empty()) {
           controller.runtime.selected_file_index =
               std::min(controller.runtime.selected_file_index + 1, controller.runtime.files_entries.size() - 1);
@@ -2956,6 +3011,10 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
           if (controller.runtime.selected_git_index > 0) {
             --controller.runtime.selected_git_index;
             review_changed = true;
+          }
+        } else if (role == TabRole::Run) {
+          if (controller.runtime.selected_task_index > 0) {
+            --controller.runtime.selected_task_index;
           }
         } else if (controller.runtime.selected_file_index > 0) {
           --controller.runtime.selected_file_index;
@@ -3059,6 +3118,26 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
           set_status(controller, "Opened " + selected_git->path);
           invalidate_pane_data_snapshot(state.root);
           screen.PostEvent(ftxui::Event::Custom);
+          return true;
+        }
+      }
+      if (role == TabRole::Run) {
+        std::vector<std::string> rerun_argv;
+        std::string name = "rerun";
+        bool use_pty = false;
+        {
+          std::lock_guard<std::mutex> lock(controller.mutex);
+          if (!controller.runtime.task_history.empty()) {
+            const auto index =
+                std::min(controller.runtime.selected_task_index, controller.runtime.task_history.size() - 1);
+            const auto& task = controller.runtime.task_history[index];
+            rerun_argv = task.argv;
+            name = task.name + " rerun";
+            use_pty = task.use_pty;
+          }
+        }
+        if (!rerun_argv.empty()) {
+          launch_task(screen, controller, state, std::move(name), std::move(rerun_argv), use_pty, caps);
           return true;
         }
       }

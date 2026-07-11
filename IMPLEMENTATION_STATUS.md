@@ -14,6 +14,7 @@ Last updated: 2026-07-10
 - Runtime task records now capture command name, exit state, timestamps, and output excerpts for startup probes.
 - The shell can launch a recent command, rerun the latest task, cancel the active task, and stream live subprocess output into runtime task records.
 - Recent-command task launches now use a PTY path so terminal-oriented tools keep TTY behavior while still feeding the Logs pane.
+- The Run tab now includes a dedicated task-history pane, selected-task log inspection, and rerun of the focused recorded task.
 - The Search pane now supports in-app `rg` queries with bounded async results and basic result selection.
 - Selected search results can now open safely in `nvim` with line targeting through restored terminal I/O.
 - The Files pane now supports basic directory navigation, file-open handoff into `nvim`, and a browsable current subtree.
@@ -43,6 +44,7 @@ Last updated: 2026-07-10
 ## Partially implemented
 
 - Terminal and Logs panes reflect real runtime task records, including whether the latest task used a PTY or plain pipes.
+- The Run tab now surfaces task history directly, but it is still a lightweight explorer rather than a broader process manager.
 - Search pane can run and display `rg` queries and open selected results in `nvim`, but broader file navigation is still missing.
 - File navigation is keyboard-driven and directory-aware, but it is still not a full tree widget.
 - Git and Diff panes now support file-level staging, selected-hunk stage/unstage, selected-file diff inspection, and commit submission, but not branch management.

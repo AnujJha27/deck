@@ -3,6 +3,7 @@
 ## Git discipline
 
 - This project lives inside a larger dirty parent repository. Never use broad staging or commit commands that can capture parent-repo changes by accident.
+- This checkout is already wired to its standalone `deck` Git history. Never run `git init` here again, and do not replace `.git` or repoint it away from the existing standalone repo metadata.
 - Always scope `git add` to the specific `deck` files being changed.
 - Always scope commits to the intended `deck` work only.
 - Do not stage build artifacts, `.env`, or unrelated generated files unless the user explicitly asks for them in a commit.

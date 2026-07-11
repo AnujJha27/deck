@@ -17,6 +17,7 @@ struct PaneDataSnapshot {
   std::vector<std::string> search_lines;
   std::vector<std::string> git_lines;
   std::vector<std::string> logs_lines;
+  std::vector<std::string> tasks_lines;
   std::vector<std::string> markets_lines;
   std::vector<std::string> portfolio_lines;
   std::vector<std::string> notes_lines;

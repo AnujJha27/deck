@@ -15,6 +15,7 @@ enum class PaneKind {
   Search,
   Git,
   Logs,
+  Tasks,
   Markets,
   Portfolio,
   Notes,
