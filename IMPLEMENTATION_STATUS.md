@@ -28,6 +28,7 @@ Last updated: 2026-07-13
 - Threshold alerts now load from `.deck/alerts.txt`, flag matching watchlist symbols, and surface triggered messages in the Finance panes and status line.
 - Finance alerts can now also be added in-app from the Finance tab and persisted back to `.deck/alerts.txt`.
 - The workspace summary now calls out safe-mode behavior and degraded capabilities per tab instead of leaving missing tools/providers implicit.
+- `--safe` now provides a read-only, non-fullscreen workspace summary for recovery and diagnostics.
 - The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
 - The Portfolio pane now also calls out invested-vs-cash mix, quote coverage, largest holding concentration, and best/worst unrealized positions.
 - Git status and diff pane redraws now reuse cached refresh-time command output instead of shelling out on every render.

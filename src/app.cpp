@@ -3298,6 +3298,23 @@ std::filesystem::path normalize_workspace_path(const CliOptions& options) {
   return std::filesystem::current_path();
 }
 
+void render_safe_summary(const WorkspacePersistentState& persistent,
+                         const WorkspaceRuntimeState& runtime,
+                         const EnvironmentCapabilities& caps) {
+  std::cout << "deck safe mode (read-only summary)\n";
+  std::cout << "workspace: " << persistent.root << "\n";
+  std::cout << "tabs: " << persistent.tabs.size() << "\n";
+  std::cout << "files shown: " << runtime.files_entries.size() << "\n";
+  std::cout << "watchlist: " << runtime.market_entries.size() << " symbols\n";
+  std::cout << "portfolio: " << runtime.positions.size() << " positions, " << runtime.balances.size()
+            << " balances\n";
+  std::cout << "git: " << (caps.git ? "available" : "missing") << "\n";
+  std::cout << "search: " << (caps.rg ? "available" : "missing") << "\n";
+  std::cout << "market data: " << (runtime.market_data_enabled ? runtime.market_data_provider : "disabled") << "\n";
+  std::cout << "status: " << (runtime.status_message.empty() ? "ready" : runtime.status_message) << "\n";
+  std::cout << "Run `deck` without --safe to open the interactive workspace.\n";
+}
+
 }  // namespace
 
 int run_app(const CliOptions& options) {
@@ -3336,6 +3353,11 @@ int run_app(const CliOptions& options) {
   WorkspaceRuntimeState runtime;
   runtime.overlays_enabled = !options.safe_mode;
   bootstrap_runtime_state(persistent, caps, options.safe_mode, runtime);
+
+  if (options.safe_mode) {
+    render_safe_summary(persistent, runtime, caps);
+    return 0;
+  }
 
   if (options.workspace_open || std::filesystem::is_directory(root)) {
     launch_ftxui_shell(persistent, runtime, caps, options.safe_mode);

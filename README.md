@@ -72,6 +72,8 @@ Useful variants:
 ./build/deck workspace open .
 ```
 
+`--safe` prints a read-only workspace and capability summary without entering fullscreen mode. It is useful when terminal rendering or persisted UI state is suspect.
+
 ## Finance setup
 
 For live API-backed quotes, set:

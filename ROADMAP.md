@@ -46,6 +46,7 @@ Last updated: 2026-07-13
 
 - [x] Add pane-level refresh and status messaging.
 - [x] Add better safe-mode and degraded-capability explanations in the UI.
+- [x] Make safe mode a non-fullscreen diagnostic and recovery path.
 - [x] Fix terminal shutdown so quitting never leaves mouse/escape garbage printed.
 - [x] Reduce tab-switch/render lag under repeated redraws.
 - [x] Extend Git review beyond file-level actions into hunk-level staging.

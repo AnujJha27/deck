@@ -1,10 +1,14 @@
 #include "deck/environment.h"
+#include "deck/app.h"
+#include "deck/cli.h"
 
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -96,4 +100,24 @@ DECK_TEST(detect_environment_reports_finnhub_key_source) {
 
   std::filesystem::remove(root / ".env");
   std::filesystem::remove(root);
+}
+
+DECK_TEST(safe_mode_renders_read_only_summary) {
+  const auto original_cwd = std::filesystem::current_path();
+  const auto root = std::filesystem::temp_directory_path() / "deck_safe_mode_test";
+  std::filesystem::create_directories(root);
+  std::filesystem::current_path(root);
+
+  deck::CliOptions options;
+  options.safe_mode = true;
+  std::ostringstream captured;
+  auto* const original_buffer = std::cout.rdbuf(captured.rdbuf());
+  const auto exit_code = deck::run_app(options);
+  std::cout.rdbuf(original_buffer);
+  std::filesystem::current_path(original_cwd);
+  std::filesystem::remove(root);
+
+  DECK_ASSERT(exit_code == 0);
+  DECK_ASSERT(captured.str().find("deck safe mode (read-only summary)") != std::string::npos);
+  DECK_ASSERT(captured.str().find("interactive workspace") != std::string::npos);
 }
