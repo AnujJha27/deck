@@ -433,6 +433,12 @@ std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
   lines.push_back("branch: " + (runtime.current_git_branch.empty() ? std::string("detached/unknown")
                                                                   : runtime.current_git_branch) +
                   "  local branches: " + std::to_string(runtime.git_branches.size()));
+  if (!runtime.git_recent_commits.empty()) {
+    lines.push_back("Recent commits:");
+    for (std::size_t i = 0; i < runtime.git_recent_commits.size() && i < 3; ++i) {
+      lines.push_back("  " + runtime.git_recent_commits[i]);
+    }
+  }
   lines.push_back("changed files: " + std::to_string(runtime.git_entries.size()));
   if (!runtime.git_entries.empty()) {
     const auto begin = runtime.selected_git_index > 2 ? runtime.selected_git_index - 2 : 0;

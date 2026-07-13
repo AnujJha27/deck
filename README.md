@@ -23,7 +23,7 @@
 - compact tab/footer chrome that leaves the full body for active panes
 - command palette for common actions
 - PTY-backed recent-command execution with rerun/cancel support
-- dedicated Run-tab task history explorer with selected-task logs
+- dedicated Run-tab task history explorer with selected-task logs, rerun, and cancellation
 - status footer and degraded-capability messaging
 - safe mode for reduced terminal interaction
 
@@ -33,6 +33,7 @@
 - `rg`-based search with in-app query entry
 - safe editor handoff into `nvim`
 - Git status, diff, stage, unstage, and commit actions
+- current branch and recent commit history alongside file/hunk review
 - inspect local branches and switch to or create branches from the command palette
 - diff navigation across files and hunks
 - selected-hunk stage and unstage actions from the Review tab
@@ -119,6 +120,8 @@ Common controls:
 - `r` run recent command
 - `R` rerun latest task
 - `x` refresh current surface or cancel active task
+
+Dev is for launching a command beside files and search. Run is for inspecting its recorded output, choosing an older task, rerunning it, or cancelling the active task.
 
 Run controls:
 

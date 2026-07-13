@@ -181,6 +181,7 @@ struct WorkspaceRuntimeState {
   std::size_t selected_git_index = 0;
   std::vector<GitBranchEntry> git_branches;
   std::string current_git_branch;
+  std::vector<std::string> git_recent_commits;
   std::vector<DiffHunk> diff_hunks;
   std::size_t selected_diff_hunk = 0;
   std::string git_status_text;
