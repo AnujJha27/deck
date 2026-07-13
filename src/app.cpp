@@ -2524,14 +2524,21 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
     request_market_quotes(screen, controller, state, caps);
   }
   auto root = CatchEvent(renderer, [&](ftxui::Event event) {
-    if (event == ftxui::Event::Character('r')) {
+    bool editor_active = false;
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      editor_active = controller.runtime.note_editor.editing || controller.runtime.scratch_editor.editing;
+    }
+    const bool text_input_active = editor_active || search_overlay.active || ticker_overlay.active ||
+                                   alert_overlay.active || command_overlay.active || commit_overlay.active;
+    if (!text_input_active && event == ftxui::Event::Character('r')) {
       if (!state.recent_commands.empty()) {
         auto argv = split_command_line(state.recent_commands.front());
         launch_task(screen, controller, state, "recent command", std::move(argv), true, caps);
       }
       return true;
     }
-    if (event == ftxui::Event::Character('R')) {
+    if (!text_input_active && event == ftxui::Event::Character('R')) {
       std::vector<std::string> argv;
       std::string name = "rerun";
       bool use_pty = false;
@@ -2549,7 +2556,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       }
       return true;
     }
-    if (event == ftxui::Event::Character('x')) {
+    if (!text_input_active && event == ftxui::Event::Character('x')) {
       if (controller.task_running.load()) {
         controller.cancel_requested = true;
       } else {
