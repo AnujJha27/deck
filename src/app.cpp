@@ -1610,6 +1610,22 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
   return suggestions;
 }
 
+std::string controls_for_role(TabRole role) {
+  switch (role) {
+    case TabRole::Dev:
+      return "/ search   :run <command> launch   j/k + Enter files   r recent command";
+    case TabRole::Run:
+      return "j/k select task   Enter rerun selected   R rerun latest   x cancel";
+    case TabRole::Review:
+      return "j/k files   [/] hunks   s/u file   S/U hunk   c commit   :branch <name>";
+    case TabRole::Finance:
+      return "j/k ticker   Enter focus   a add ticker   A alert   x refresh";
+    case TabRole::Notes:
+      return "E context note   e scratchpad   Ctrl+S save   Ctrl+R reload   Esc stop editing";
+  }
+  return {};
+}
+
 void launch_task(ScreenInteractive& screen,
                  ShellTaskController& controller,
                  const WorkspacePersistentState& persistent,
@@ -1630,6 +1646,13 @@ void launch_task(ScreenInteractive& screen,
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
     controller.runtime.active_task_state = TaskState::Starting;
+    constexpr std::size_t max_task_history = 64;
+    if (controller.runtime.task_history.size() >= max_task_history) {
+      controller.runtime.task_history.erase(controller.runtime.task_history.begin());
+      if (controller.runtime.selected_task_index > 0) {
+        --controller.runtime.selected_task_index;
+      }
+    }
     controller.runtime.task_history.push_back(make_task_record(name, argv, use_pty));
     task_index = controller.runtime.task_history.size() - 1;
     controller.runtime.selected_task_index = task_index;
@@ -2311,37 +2334,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       runtime_snapshot = controller.runtime;
     }
     const auto& current = state.tabs[runtime_snapshot.visible_tab];
-    return hbox({
-               text("role: " + to_string(current.role)),
-               separator(),
-               text("pane: " + to_string(current.focused_pane)),
-               separator(),
-               text(std::string("scratch: ") + (runtime_snapshot.scratch_editor.dirty ? "dirty" : "saved")),
-               separator(),
-               text("watchlist: " + std::to_string(runtime_snapshot.market_entries.size())),
-               separator(),
-               text("market: " + runtime_snapshot.market_data_provider),
-               separator(),
-               text("status: " + (runtime_snapshot.status_message.empty() ? std::string("ready")
-                                                                          : runtime_snapshot.status_message)),
-               separator(),
-               text("r run"),
-               separator(),
-               text("R rerun"),
-               separator(),
-               text("a add"),
-               separator(),
-               text("A alert"),
-               separator(),
-               text("s/u git"),
-               separator(),
-               text("c commit"),
-               separator(),
-               text("x refresh/cancel"),
-               separator(),
-               text(": palette"),
-               separator(),
-               text("q quit"),
+    const auto status = runtime_snapshot.status_message.empty() ? std::string("ready")
+                                                                  : runtime_snapshot.status_message;
+    return vbox({
+               text(current.name + ": " + controls_for_role(current.role)) | xflex,
+               text("status: " + status + "   : commands   q quit") | dim | xflex,
            }) |
            xflex;
   });
@@ -2452,7 +2449,9 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   });
 
   auto screen = ScreenInteractive::FullscreenAlternateScreen();
-  screen.TrackMouse(true);
+  // Keyboard controls cover every action. Avoid mouse reporting because it can
+  // create a redraw storm in terminals that emit motion events.
+  screen.TrackMouse(false);
   if (controller.runtime.market_data_enabled) {
     request_market_quotes(screen, controller, state, caps);
   }
@@ -3268,7 +3267,6 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   });
 
   screen.Loop(root);
-  screen.TrackMouse(false);
   std::cout << screen.ResetPosition(true) << "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l" << std::flush;
   controller.cancel_requested = true;
   if (controller.worker.joinable()) {
