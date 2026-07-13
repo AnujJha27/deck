@@ -389,6 +389,9 @@ struct ShellTaskController {
   std::jthread worker;
   std::jthread search_worker;
   std::jthread market_worker;
+  std::jthread git_diff_worker;
+  std::atomic<bool> git_diff_worker_running = false;
+  std::atomic<std::size_t> git_diff_generation = 0;
 };
 
 struct SearchOverlayState {
@@ -1571,6 +1574,71 @@ void refresh_git_state(ShellTaskController& controller,
   }
 }
 
+void request_git_diff_refresh(ScreenInteractive& screen,
+                              ShellTaskController& controller,
+                              const WorkspacePersistentState& persistent,
+                              const EnvironmentCapabilities& caps) {
+  if (!caps.git) {
+    return;
+  }
+  ++controller.git_diff_generation;
+  if (controller.git_diff_worker_running.exchange(true)) {
+    return;
+  }
+
+  controller.git_diff_worker = std::jthread([&] {
+    for (;;) {
+      const auto generation = controller.git_diff_generation.load();
+      std::optional<GitStatusEntry> selected;
+      {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        if (!controller.runtime.git_entries.empty() &&
+            controller.runtime.selected_git_index < controller.runtime.git_entries.size()) {
+          selected = controller.runtime.git_entries[controller.runtime.selected_git_index];
+        }
+      }
+
+      std::string diff_preview;
+      std::vector<DiffHunk> diff_hunks;
+      if (selected) {
+        const auto staged = selected->index_status != " " && selected->index_status != "?";
+        ProcessRunner runner;
+        ProcessRequest request;
+        request.argv = staged
+                           ? std::vector<std::string>{"git", "-C", persistent.root.string(), "diff", "--cached", "--", selected->path}
+                           : std::vector<std::string>{"git", "-C", persistent.root.string(), "diff", "--", selected->path};
+        request.cwd = persistent.root;
+        request.timeout = std::chrono::milliseconds(500);
+        const auto result = runner.run(request);
+        diff_preview = result.stdout_text;
+        diff_hunks = parse_diff_hunks(diff_preview);
+      }
+
+      if (generation == controller.git_diff_generation.load()) {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        controller.runtime.diff_preview_text = std::move(diff_preview);
+        controller.runtime.diff_hunks = std::move(diff_hunks);
+        if (controller.runtime.diff_hunks.empty()) {
+          controller.runtime.selected_diff_hunk = 0;
+        } else if (controller.runtime.selected_diff_hunk >= controller.runtime.diff_hunks.size()) {
+          controller.runtime.selected_diff_hunk = controller.runtime.diff_hunks.size() - 1;
+        }
+      }
+      screen.PostEvent(ftxui::Event::Custom);
+
+      if (generation == controller.git_diff_generation.load()) {
+        controller.git_diff_worker_running = false;
+        if (generation == controller.git_diff_generation.load()) {
+          break;
+        }
+        if (controller.git_diff_worker_running.exchange(true)) {
+          break;
+        }
+      }
+    }
+  });
+}
+
 std::vector<std::string> palette_suggestions_for(TabRole role) {
   std::vector<std::string> suggestions = {
       "run [command]",
@@ -2137,7 +2205,7 @@ bool execute_palette_command(ScreenInteractive& screen,
         --controller.runtime.selected_git_index;
       }
     }
-    refresh_git_state(controller, state, caps);
+    request_git_diff_refresh(screen, controller, state, caps);
     invalidate_pane_data_snapshot(state.root);
     screen.PostEvent(ftxui::Event::Custom);
     return true;
@@ -3039,7 +3107,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         }
       }
       if (review_changed) {
-        refresh_git_state(controller, state, caps);
+        request_git_diff_refresh(screen, controller, state, caps);
         invalidate_pane_data_snapshot(state.root);
         screen.PostEvent(ftxui::Event::Custom);
       }
@@ -3070,7 +3138,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         }
       }
       if (review_changed) {
-        refresh_git_state(controller, state, caps);
+        request_git_diff_refresh(screen, controller, state, caps);
         invalidate_pane_data_snapshot(state.root);
         screen.PostEvent(ftxui::Event::Custom);
       }
@@ -3278,6 +3346,9 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   if (controller.market_worker.joinable()) {
     controller.market_worker.request_stop();
     controller.market_worker.join();
+  }
+  if (controller.git_diff_worker.joinable()) {
+    controller.git_diff_worker.join();
   }
 }
 

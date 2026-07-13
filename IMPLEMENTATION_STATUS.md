@@ -33,6 +33,7 @@ Last updated: 2026-07-13
 - The Portfolio pane now includes unrealized P/L, quoted-cost coverage, and simple best/worst daily mover summaries for quoted positions.
 - The Portfolio pane now also calls out invested-vs-cash mix, quote coverage, largest holding concentration, and best/worst unrealized positions.
 - Git status and diff pane redraws now reuse cached refresh-time command output instead of shelling out on every render.
+- Moving between Review files now refreshes the selected diff asynchronously, so Git subprocess work does not block `j`/`k` navigation.
 - A lightweight `:` command palette now routes common actions like run/rerun, search, git status/diff, refresh, and finance watchlist commands through the existing shell actions.
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
 - Review tabs now support explicit file/hunk diff navigation through both keyboard shortcuts and palette commands.

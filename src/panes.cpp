@@ -683,6 +683,42 @@ std::vector<std::string> lines_for_diff(const WorkspacePersistentState& state,
   return lines;
 }
 
+Color pane_accent(PaneKind kind) {
+  switch (kind) {
+    case PaneKind::Files:
+    case PaneKind::Search:
+      return Color::Cyan;
+    case PaneKind::Terminal:
+    case PaneKind::Tasks:
+    case PaneKind::Logs:
+      return Color::Yellow;
+    case PaneKind::Git:
+    case PaneKind::Diff:
+      return Color::Magenta;
+    case PaneKind::Markets:
+    case PaneKind::Portfolio:
+      return Color::Green;
+    case PaneKind::Notes:
+    case PaneKind::Scratch:
+      return Color::Blue;
+  }
+  return Color::White;
+}
+
+std::string pane_status_label(PaneStatus status) {
+  switch (status) {
+    case PaneStatus::Idle:
+      return "idle";
+    case PaneStatus::Busy:
+      return "busy";
+    case PaneStatus::Ready:
+      return "ready";
+    case PaneStatus::Degraded:
+      return "limited";
+  }
+  return "unknown";
+}
+
 class StaticPane final : public Pane {
  public:
   StaticPane(PaneKind id, std::string title, std::vector<std::string> lines, PaneStatus status)
@@ -695,7 +731,13 @@ class StaticPane final : public Pane {
       if (rows.empty()) {
         rows.push_back(text("No data"));
       }
-      return window(text(title_), vbox(std::move(rows)) | flex);
+      const auto accent = pane_accent(id_);
+      const auto badge_color = status_ == PaneStatus::Degraded ? Color::Red : accent;
+      auto title = hbox({
+          text(" " + title_ + " ") | bold | color(accent),
+          text(" " + pane_status_label(status_) + " ") | dim | color(badge_color),
+      });
+      return window(title, vbox(std::move(rows)) | flex) | color(accent);
     });
   }
 
