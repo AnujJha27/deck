@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-10
+Last updated: 2026-07-13
 
 ## Completed
 
@@ -35,6 +35,7 @@ Last updated: 2026-07-10
 - Review tabs now keep a live parsed Git file list with selected-file diff rendering, stage/unstage shortcuts, a commit-message overlay, and palette equivalents for basic commit flow actions.
 - Review tabs now support explicit file/hunk diff navigation through both keyboard shortcuts and palette commands.
 - Review tabs now support selected-hunk stage/unstage actions against the diff currently in view.
+- Review state now tracks local Git branches, with palette actions to switch branches or create-and-switch a local branch.
 - Context-linked notes are now available for selected files, search results, and finance symbols, with note files persisted under `.deck/notes/`.
 - A dedicated Notes tab now combines the context-note surface with a workspace scratchpad backed by `.deck/scratch.md`, both with inline editing, save, and reload controls.
 - The shell footer now exposes status messaging for recent actions and degraded behavior.
@@ -47,7 +48,7 @@ Last updated: 2026-07-10
 - The Run tab now surfaces task history directly, but it is still a lightweight explorer rather than a broader process manager.
 - Search pane can run and display `rg` queries and open selected results in `nvim`, but broader file navigation is still missing.
 - File navigation is keyboard-driven and directory-aware, but it is still not a full tree widget.
-- Git and Diff panes now support file-level staging, selected-hunk stage/unstage, selected-file diff inspection, and commit submission, but not branch management.
+- Git and Diff panes now support file-level staging, selected-hunk stage/unstage, selected-file diff inspection, commit submission, and local branch switching/creation, but not remote branch management.
 - The command palette covers core actions, but it is still a typed overlay rather than a richer fuzzy picker or full command router.
 - Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, allocation/concentration analytics, and threshold alerts.
 - The shell has multi-tab structure and persistence, but tab-local interactivity remains thin.

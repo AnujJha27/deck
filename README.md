@@ -32,6 +32,7 @@
 - `rg`-based search with in-app query entry
 - safe editor handoff into `nvim`
 - Git status, diff, stage, unstage, and commit actions
+- inspect local branches and switch to or create branches from the command palette
 - diff navigation across files and hunks
 - selected-hunk stage and unstage actions from the Review tab
 
@@ -127,6 +128,8 @@ Review controls:
 - `S` stage selected hunk from the current unstaged diff view
 - `U` unstage selected hunk from the current staged diff view
 - `[` and `]` move between hunks
+- `:branch <name>` switch to an existing local branch
+- `:branch-new <name>` create and switch to a new local branch
 
 PTY-backed command tasks stream through the Logs pane as a single terminal-style output channel, so interactive programs keep their expected TTY behavior.
 

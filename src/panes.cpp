@@ -297,6 +297,23 @@ std::vector<GitStatusEntry> parse_git_status_entries_impl(const std::string& tex
   return entries;
 }
 
+std::vector<GitBranchEntry> parse_git_branch_entries_impl(const std::string& text) {
+  std::vector<GitBranchEntry> entries;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.size() < 2 || line[1] != ' ') {
+      continue;
+    }
+    const auto name = line.substr(2);
+    if (name.empty()) {
+      continue;
+    }
+    entries.push_back({name, line[0] == '*'});
+  }
+  return entries;
+}
+
 std::vector<DiffHunk> parse_diff_hunks_impl(const std::string& text) {
   std::vector<DiffHunk> hunks;
   std::istringstream in(text);
@@ -409,7 +426,10 @@ std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
   if (lines.empty()) {
     lines.push_back("Working tree clean");
   }
-  lines.push_back("enter refresh  s/u file  S/U hunk  c commit  j/k move");
+  lines.push_back("enter refresh  s/u file  S/U hunk  c commit  :branch <name>");
+  lines.push_back("branch: " + (runtime.current_git_branch.empty() ? std::string("detached/unknown")
+                                                                  : runtime.current_git_branch) +
+                  "  local branches: " + std::to_string(runtime.git_branches.size()));
   lines.push_back("changed files: " + std::to_string(runtime.git_entries.size()));
   if (!runtime.git_entries.empty()) {
     const auto begin = runtime.selected_git_index > 2 ? runtime.selected_git_index - 2 : 0;
@@ -894,6 +914,10 @@ void invalidate_pane_data_snapshot(const std::filesystem::path& root) {
 
 std::vector<GitStatusEntry> parse_git_status_entries(const std::string& text) {
   return parse_git_status_entries_impl(text);
+}
+
+std::vector<GitBranchEntry> parse_git_branch_entries(const std::string& text) {
+  return parse_git_branch_entries_impl(text);
 }
 
 std::vector<DiffHunk> parse_diff_hunks(const std::string& text) {

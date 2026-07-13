@@ -135,6 +135,11 @@ struct GitStatusEntry {
   std::string original_path;
 };
 
+struct GitBranchEntry {
+  std::string name;
+  bool current = false;
+};
+
 struct DiffHunk {
   int old_start = 0;
   int old_count = 0;
@@ -174,6 +179,8 @@ struct WorkspaceRuntimeState {
   std::size_t search_generation = 0;
   std::vector<GitStatusEntry> git_entries;
   std::size_t selected_git_index = 0;
+  std::vector<GitBranchEntry> git_branches;
+  std::string current_git_branch;
   std::vector<DiffHunk> diff_hunks;
   std::size_t selected_diff_hunk = 0;
   std::string git_status_text;

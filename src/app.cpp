@@ -1232,6 +1232,18 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
     const auto status_result = runner.run(status_request);
     runtime.git_entries = parse_git_status_entries(status_result.stdout_text);
     runtime.git_status_text = status_result.stdout_text;
+    ProcessRequest branch_request;
+    branch_request.argv = {"git", "-C", persistent.root.string(), "branch", "--no-color"};
+    branch_request.cwd = persistent.root;
+    branch_request.timeout = std::chrono::milliseconds(300);
+    const auto branch_result = runner.run(branch_request);
+    runtime.git_branches = parse_git_branch_entries(branch_result.stdout_text);
+    for (const auto& branch : runtime.git_branches) {
+      if (branch.current) {
+        runtime.current_git_branch = branch.name;
+        break;
+      }
+    }
     if (!runtime.git_entries.empty()) {
       const auto& selected = runtime.git_entries.front();
       const auto staged = selected.index_status != " " && selected.index_status != "?";
@@ -1439,6 +1451,8 @@ void refresh_git_state(ShellTaskController& controller,
     std::lock_guard<std::mutex> lock(controller.mutex);
     controller.runtime.git_entries.clear();
     controller.runtime.selected_git_index = 0;
+    controller.runtime.git_branches.clear();
+    controller.runtime.current_git_branch.clear();
     controller.runtime.diff_hunks.clear();
     controller.runtime.selected_diff_hunk = 0;
     controller.runtime.git_status_text.clear();
@@ -1460,6 +1474,19 @@ void refresh_git_state(ShellTaskController& controller,
   }
 
   std::vector<GitStatusEntry> git_entries = parse_git_status_entries(result.stdout_text);
+  ProcessRequest branch_request;
+  branch_request.argv = {"git", "-C", persistent.root.string(), "branch", "--no-color"};
+  branch_request.cwd = persistent.root;
+  branch_request.timeout = std::chrono::milliseconds(500);
+  const auto branch_result = runner.run(branch_request);
+  auto git_branches = parse_git_branch_entries(branch_result.stdout_text);
+  std::string current_git_branch;
+  for (const auto& branch : git_branches) {
+    if (branch.current) {
+      current_git_branch = branch.name;
+      break;
+    }
+  }
   std::vector<DiffHunk> diff_hunks;
   std::string diff_preview_text;
   if (!git_entries.empty()) {
@@ -1478,6 +1505,8 @@ void refresh_git_state(ShellTaskController& controller,
 
   std::lock_guard<std::mutex> lock(controller.mutex);
   controller.runtime.git_entries = std::move(git_entries);
+  controller.runtime.git_branches = std::move(git_branches);
+  controller.runtime.current_git_branch = std::move(current_git_branch);
   controller.runtime.git_status_text = result.stdout_text;
   if (controller.runtime.git_entries.empty()) {
     controller.runtime.selected_git_index = 0;
@@ -1503,6 +1532,8 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
       "stage <path>",
       "unstage <path>",
       "commit <message>",
+      "branch <name>",
+      "branch-new <name>",
       "cancel",
       "quit",
   };
@@ -1958,6 +1989,32 @@ bool execute_palette_command(ScreenInteractive& screen,
                           caps,
                           "git commit",
                           {"git", "-C", state.root.string(), "commit", "-m", message});
+  }
+  if (command == "branch") {
+    if (argv.size() != 2) {
+      set_status(controller, "Usage: branch <name>");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    return run_git_action(screen,
+                          controller,
+                          state,
+                          caps,
+                          "git switch",
+                          {"git", "-C", state.root.string(), "switch", "--", argv[1]});
+  }
+  if (command == "branch-new") {
+    if (argv.size() != 2) {
+      set_status(controller, "Usage: branch-new <name>");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    return run_git_action(screen,
+                          controller,
+                          state,
+                          caps,
+                          "git switch -c",
+                          {"git", "-C", state.root.string(), "switch", "-c", argv[1]});
   }
   if (command == "cancel") {
     if (controller.task_running.load()) {

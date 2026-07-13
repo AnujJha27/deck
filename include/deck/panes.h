@@ -30,6 +30,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
                                           const EnvironmentCapabilities& caps);
 void invalidate_pane_data_snapshot(const std::filesystem::path& root);
 std::vector<GitStatusEntry> parse_git_status_entries(const std::string& text);
+std::vector<GitBranchEntry> parse_git_branch_entries(const std::string& text);
 std::vector<DiffHunk> parse_diff_hunks(const std::string& text);
 std::optional<std::string> build_patch_for_hunk(const std::string& diff_text, std::size_t hunk_index);
 

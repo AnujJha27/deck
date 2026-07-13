@@ -51,6 +51,20 @@ DECK_TEST(parse_git_status_entries_handles_common_statuses) {
   DECK_ASSERT(entries[3].worktree_status == "?");
 }
 
+DECK_TEST(parse_git_branch_entries_marks_current_branch) {
+  const std::string input =
+      "  feature/search\n"
+      "* main\n"
+      "  release/1.0\n";
+
+  auto entries = deck::parse_git_branch_entries(input);
+  DECK_ASSERT(entries.size() == 3);
+  DECK_ASSERT(entries[0].name == "feature/search");
+  DECK_ASSERT(!entries[0].current);
+  DECK_ASSERT(entries[1].name == "main");
+  DECK_ASSERT(entries[1].current);
+}
+
 DECK_TEST(parse_diff_hunks_handles_unified_headers) {
   const std::string input =
       "diff --git a/src/app.cpp b/src/app.cpp\n"

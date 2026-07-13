@@ -1,6 +1,6 @@
 # Roadmap
 
-Last updated: 2026-07-10
+Last updated: 2026-07-13
 
 ## Core checklist
 
@@ -25,6 +25,7 @@ Last updated: 2026-07-10
 - [x] Add actual `rg` query execution and bounded result navigation.
 - [x] Add actionable git refresh, stage, unstage, and commit flows.
 - [x] Add diff navigation between changed files/hunks.
+- [x] Add local branch discovery plus switch/create actions.
 - [x] Add context-linked notes for files, search results, and finance symbols.
 - [x] Add a dedicated workspace scratchspace pane with inline editing.
 
