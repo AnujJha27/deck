@@ -205,6 +205,7 @@ std::vector<std::string> lines_for_terminal(const WorkspacePersistentState& stat
         "Started: " + task.started_at,
         "Finished: " + task.finished_at,
         "Exit code: " + std::to_string(task.exit_code),
+        "Dev: :run <command>  / search  r recent command",
     };
   }
   return {
@@ -212,6 +213,7 @@ std::vector<std::string> lines_for_terminal(const WorkspacePersistentState& stat
       "Recent command: " + (state.recent_commands.empty() ? std::string("none") : state.recent_commands.front()),
       "Command slots: " + std::to_string(state.recent_commands.size()),
       "PTY runner: available for command tasks",
+      "Dev: :run <command>  / search  r recent command",
   };
 }
 
@@ -763,7 +765,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
         snapshot.files_lines = {
             "Root: " + state.root.string(),
             "Browse: " + runtime.files_browser_root,
-            "enter open  j/k move",
+            "enter open  j/k move  / search  :run <command>",
             "items: " + std::to_string(runtime.files_entries.size()),
         };
         for (std::size_t i = 0; i < runtime.files_entries.size() && i < 8; ++i) {
@@ -821,6 +823,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       if (!runtime.portfolio_lines.empty() || !runtime.current_market_symbol.empty()) {
         snapshot.portfolio_lines = lines_for_portfolio(runtime);
       }
+      snapshot.notes_lines = lines_for_notes(state, runtime, found->second.files);
       snapshot.scratch_lines = lines_for_scratch(runtime);
       snapshot.logs_lines = lines_for_logs(state, runtime, found->second.files);
       if (!runtime.status_message.empty()) {
@@ -837,7 +840,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
     snapshot.files_lines = {
         "Root: " + state.root.string(),
         "Browse: " + runtime.files_browser_root,
-        "enter open  j/k move",
+        "enter open  j/k move  / search  :run <command>",
         "items: " + std::to_string(runtime.files_entries.size()),
     };
     for (std::size_t i = 0; i < runtime.files_entries.size() && i < 8; ++i) {

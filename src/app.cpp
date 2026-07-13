@@ -1546,7 +1546,7 @@ void refresh_git_state(ShellTaskController& controller,
 
 std::vector<std::string> palette_suggestions_for(TabRole role) {
   std::vector<std::string> suggestions = {
-      "run",
+      "run [command]",
       "rerun",
       "search <query>",
       "git-status",
@@ -1887,6 +1887,11 @@ bool execute_palette_command(ScreenInteractive& screen,
 
   const auto command = argv.front();
   if (command == "run") {
+    if (argv.size() > 1) {
+      auto command_line = command_text.substr(command_text.find_first_not_of(" \t", command.size()));
+      launch_task(screen, controller, state, "palette command", split_command_line(command_line), true, caps);
+      return true;
+    }
     if (state.recent_commands.empty()) {
       set_status(controller, "No recent command to run");
       screen.PostEvent(ftxui::Event::Custom);
@@ -2259,6 +2264,10 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   AlertOverlayState alert_overlay;
   CommandOverlayState command_overlay;
   CommitOverlayState commit_overlay;
+  // Runtime-backed pane lines are rebuilt from the cached scan on each render. UI-only
+  // edits therefore only need a redraw; dropping the cache here made every keystroke
+  // rescan the workspace.
+  auto invalidate_pane_data_snapshot = [](const std::filesystem::path&) {};
 
   int tab_index = static_cast<int>(controller.runtime.visible_tab);
   std::vector<std::string> tab_names;

@@ -114,6 +114,7 @@ account,amount,currency
 Common controls:
 
 - `:` open command palette
+- `:run <command>` run any workspace command (for example, `:run cmake --build build`)
 - `q` quit
 - `r` run recent command
 - `R` rerun latest task
