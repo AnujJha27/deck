@@ -816,6 +816,9 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
             "enter open  j/k move  / search  :run <command>",
             "items: " + std::to_string(runtime.files_entries.size()),
         };
+        if (runtime.review_files_mode) {
+          snapshot.files_lines.insert(snapshot.files_lines.begin() + 2, "Review Files mode: f returns to changed files");
+        }
         for (std::size_t i = 0; i < runtime.files_entries.size() && i < 8; ++i) {
           const auto& entry = runtime.files_entries[i];
           const auto prefix = i == runtime.selected_file_index ? "> " : "  ";
@@ -891,6 +894,9 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
         "enter open  j/k move  / search  :run <command>",
         "items: " + std::to_string(runtime.files_entries.size()),
     };
+    if (runtime.review_files_mode) {
+      snapshot.files_lines.insert(snapshot.files_lines.begin() + 2, "Review Files mode: f returns to changed files");
+    }
     for (std::size_t i = 0; i < runtime.files_entries.size() && i < 8; ++i) {
       const auto& entry = runtime.files_entries[i];
       const auto prefix = i == runtime.selected_file_index ? "> " : "  ";

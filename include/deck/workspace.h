@@ -179,6 +179,7 @@ struct WorkspaceRuntimeState {
   std::size_t search_generation = 0;
   std::vector<GitStatusEntry> git_entries;
   std::size_t selected_git_index = 0;
+  bool review_files_mode = false;
   std::vector<GitBranchEntry> git_branches;
   std::string current_git_branch;
   std::vector<std::string> git_recent_commits;

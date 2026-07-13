@@ -1685,7 +1685,7 @@ std::string controls_for_role(TabRole role) {
     case TabRole::Run:
       return "j/k select task   Enter rerun selected   R rerun latest   x cancel";
     case TabRole::Review:
-      return "j/k files   [/] hunks   s/u file   S/U hunk   c commit   :branch <name>";
+      return "f files/review   j/k move   Enter open   [/] hunks   s/u file   S/U hunk   c commit";
     case TabRole::Finance:
       return "j/k ticker   Enter focus   a add ticker   A alert   x refresh";
     case TabRole::Notes:
@@ -3030,6 +3030,21 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       screen.PostEvent(ftxui::Event::Custom);
       return true;
     }
+    if (event == ftxui::Event::Character('f')) {
+      const auto role = [&] {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        return state.tabs[controller.runtime.visible_tab].role;
+      }();
+      if (role == TabRole::Review) {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        controller.runtime.review_files_mode = !controller.runtime.review_files_mode;
+        controller.runtime.status_message = controller.runtime.review_files_mode
+                                                ? "Review Files mode: j/k select, Enter open or browse"
+                                                : "Review Changes mode: j/k select changed file";
+        screen.PostEvent(ftxui::Event::Custom);
+        return true;
+      }
+    }
     if (event == ftxui::Event::Character('s')) {
       const auto role = [&] {
         std::lock_guard<std::mutex> lock(controller.mutex);
@@ -3088,6 +3103,12 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
                 std::min(controller.runtime.selected_market_index + 1, controller.runtime.market_entries.size() - 1);
             refresh_note_context(state.root, controller.runtime);
           }
+        } else if (role == TabRole::Review && controller.runtime.review_files_mode) {
+          if (!controller.runtime.files_entries.empty()) {
+            controller.runtime.selected_file_index =
+                std::min(controller.runtime.selected_file_index + 1, controller.runtime.files_entries.size() - 1);
+            refresh_note_context(state.root, controller.runtime);
+          }
         } else if (role == TabRole::Review) {
           if (!controller.runtime.git_entries.empty()) {
             const auto before = controller.runtime.selected_git_index;
@@ -3121,6 +3142,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         if (role == TabRole::Finance) {
           if (controller.runtime.selected_market_index > 0) {
             --controller.runtime.selected_market_index;
+            refresh_note_context(state.root, controller.runtime);
+          }
+        } else if (role == TabRole::Review && controller.runtime.review_files_mode) {
+          if (controller.runtime.selected_file_index > 0) {
+            --controller.runtime.selected_file_index;
             refresh_note_context(state.root, controller.runtime);
           }
         } else if (role == TabRole::Review) {
@@ -3212,11 +3238,13 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
           return true;
         }
       }
+      bool review_files_mode = false;
       if (role == TabRole::Review) {
         std::optional<GitStatusEntry> selected_git;
         int target_line = 1;
         {
           std::lock_guard<std::mutex> lock(controller.mutex);
+          review_files_mode = controller.runtime.review_files_mode;
           if (!controller.runtime.git_entries.empty() &&
               controller.runtime.selected_git_index < controller.runtime.git_entries.size()) {
             selected_git = controller.runtime.git_entries[controller.runtime.selected_git_index];
@@ -3226,7 +3254,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
             target_line = std::max(controller.runtime.diff_hunks[controller.runtime.selected_diff_hunk].new_start, 1);
           }
         }
-        if (selected_git) {
+        if (!review_files_mode && selected_git) {
           SearchResult file_result;
           file_result.path = selected_git->path;
           file_result.line = target_line;

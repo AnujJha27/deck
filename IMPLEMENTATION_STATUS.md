@@ -40,6 +40,7 @@ Last updated: 2026-07-13
 - Review tabs now support selected-hunk stage/unstage actions against the diff currently in view.
 - Review state now tracks local Git branches, with palette actions to switch branches or create-and-switch a local branch.
 - Review state now also shows recent commits next to current branch and changed-file/hunk context.
+- The Review tab can now toggle into its Files pane for normal `j`/`k` navigation and editor handoff, rather than leaving that pane display-only.
 - Context-linked notes are now available for selected files, search results, and finance symbols, with note files persisted under `.deck/notes/`.
 - A dedicated Notes tab now combines the context-note surface with a workspace scratchpad backed by `.deck/scratch.md`, both with inline editing, save, and reload controls.
 - The shell footer now exposes status messaging for recent actions and degraded behavior.

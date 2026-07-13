@@ -135,6 +135,7 @@ Review controls:
 - `S` stage selected hunk from the current unstaged diff view
 - `U` unstage selected hunk from the current staged diff view
 - `[` and `]` move between hunks
+- `f` toggle the Review tab between changed-file review and the left Files pane
 - `:branch <name>` switch to an existing local branch
 - `:branch-new <name>` create and switch to a new local branch
 
