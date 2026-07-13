@@ -209,6 +209,7 @@ struct WorkspaceRuntimeState {
 };
 
 WorkspacePersistentState make_default_workspace(const std::filesystem::path& root);
+void ensure_workspace_tabs(WorkspacePersistentState& state);
 std::string serialize_workspace(const WorkspacePersistentState& state);
 std::optional<WorkspacePersistentState> parse_workspace(
     const std::string& text, const std::filesystem::path& fallback_root);

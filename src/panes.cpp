@@ -35,6 +35,7 @@ struct FileScanSummary {
 
 struct SnapshotCacheEntry {
   PaneDataSnapshot snapshot;
+  FileScanSummary files;
 };
 
 std::mutex snapshot_cache_mutex;
@@ -821,7 +822,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
         snapshot.portfolio_lines = lines_for_portfolio(runtime);
       }
       snapshot.scratch_lines = lines_for_scratch(runtime);
-      snapshot.logs_lines = lines_for_logs(state, runtime, scan_workspace_files(state.root));
+      snapshot.logs_lines = lines_for_logs(state, runtime, found->second.files);
       if (!runtime.status_message.empty()) {
         snapshot.logs_lines.push_back("status: " + runtime.status_message);
       }
@@ -902,7 +903,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
 
   {
     std::lock_guard<std::mutex> lock(snapshot_cache_mutex);
-    snapshot_cache[cache_key] = SnapshotCacheEntry{snapshot};
+    snapshot_cache[cache_key] = SnapshotCacheEntry{snapshot, files};
   }
   return snapshot;
 }

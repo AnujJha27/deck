@@ -73,6 +73,21 @@ WorkspacePersistentState make_default_workspace(const std::filesystem::path& roo
   return state;
 }
 
+void ensure_workspace_tabs(WorkspacePersistentState& state) {
+  const auto defaults = make_default_workspace(state.root);
+  for (const auto& default_tab : defaults.tabs) {
+    const auto exists = std::any_of(state.tabs.begin(), state.tabs.end(), [&](const TabPersistentState& tab) {
+      return tab.role == default_tab.role;
+    });
+    if (!exists) {
+      state.tabs.push_back(default_tab);
+    }
+  }
+  if (state.focused_tab >= state.tabs.size()) {
+    state.focused_tab = 0;
+  }
+}
+
 std::string serialize_workspace(const WorkspacePersistentState& state) {
   std::ostringstream out;
   out << "workspace_name=" << escape(state.name) << "\n";

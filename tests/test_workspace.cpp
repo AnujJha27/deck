@@ -47,3 +47,12 @@ DECK_TEST(workspace_round_trip) {
   DECK_ASSERT(parsed->last_anchor.has_value());
   DECK_ASSERT(parsed->last_anchor->page == 8);
 }
+
+DECK_TEST(workspace_tab_upgrade_adds_missing_notes_tab) {
+  auto state = deck::make_default_workspace("/tmp/deck");
+  state.tabs.pop_back();
+  deck::ensure_workspace_tabs(state);
+  DECK_ASSERT(state.tabs.size() == 5);
+  DECK_ASSERT(state.tabs.back().role == deck::TabRole::Notes);
+  DECK_ASSERT(deck::contains_pane(state.tabs.back().layout, deck::PaneKind::Scratch));
+}

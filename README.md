@@ -20,6 +20,7 @@
 ### Workspace shell
 
 - fullscreen FTXUI interface with persistent tabs and split panes
+- compact tab/footer chrome that leaves the full body for active panes
 - command palette for common actions
 - PTY-backed recent-command execution with rerun/cancel support
 - dedicated Run-tab task history explorer with selected-task logs
@@ -147,6 +148,8 @@ Notes controls:
 - `Ctrl+S` save
 - `Ctrl+R` reload
 - `Esc` stop editing
+
+The Notes tab contains the workspace Scratch pane. Existing saved workspaces are upgraded to include it automatically on the next launch.
 
 ## Workspace files
 

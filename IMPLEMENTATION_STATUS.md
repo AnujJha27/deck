@@ -41,6 +41,8 @@ Last updated: 2026-07-13
 - A dedicated Notes tab now combines the context-note surface with a workspace scratchpad backed by `.deck/scratch.md`, both with inline editing, save, and reload controls.
 - The shell footer now exposes status messaging for recent actions and degraded behavior.
 - Pane rendering now uses cached snapshots instead of recomputing workspace scans and Git summaries on each redraw.
+- The fullscreen shell now reserves its body for active panes, while Finance quote refreshes run off the UI thread and cached redraws no longer rescan the workspace for Logs.
+- Existing persisted layouts are upgraded to include the Notes/Scratch tab when it is missing.
 - `PaperAnchor` serialization and the legacy paper schema remain in persistence for now, but they are no longer part of the active MVP surface.
 
 ## Partially implemented

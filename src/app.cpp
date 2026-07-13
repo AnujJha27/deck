@@ -1272,11 +1272,16 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
 void refresh_market_quotes(ScreenInteractive& screen,
                            ShellTaskController& controller,
                            const WorkspacePersistentState& persistent,
-                           const EnvironmentCapabilities& caps) {
+                           const EnvironmentCapabilities& caps,
+                           bool refresh_claimed) {
   const auto token = (caps.curl && caps.finnhub_api_key) ? resolve_env_var(persistent.root, "FINNHUB_API_KEY")
                                                          : std::nullopt;
   const auto local_quotes = load_local_quotes_from_csv(persistent.root, discover_finance_sources(persistent.root));
   if (local_quotes.empty() && !token) {
+    if (refresh_claimed) {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      controller.runtime.market_data_refresh_in_progress = false;
+    }
     if (!caps.curl) {
       set_status(controller, "No local quote CSV found and curl is unavailable for Finnhub refresh");
     } else if (!caps.finnhub_api_key) {
@@ -1290,10 +1295,6 @@ void refresh_market_quotes(ScreenInteractive& screen,
   std::vector<MarketEntry> watchlist;
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
-    if (controller.runtime.market_data_refresh_in_progress) {
-      return;
-    }
-    controller.runtime.market_data_refresh_in_progress = true;
     watchlist = controller.runtime.market_entries;
   }
   screen.PostEvent(ftxui::Event::Custom);
@@ -1332,6 +1333,27 @@ void refresh_market_quotes(ScreenInteractive& screen,
   }
   invalidate_pane_data_snapshot(persistent.root);
   screen.PostEvent(ftxui::Event::Custom);
+}
+
+void request_market_quotes(ScreenInteractive& screen,
+                           ShellTaskController& controller,
+                           const WorkspacePersistentState& persistent,
+                           const EnvironmentCapabilities& caps) {
+  {
+    std::lock_guard<std::mutex> lock(controller.mutex);
+    if (controller.runtime.market_data_refresh_in_progress) {
+      controller.runtime.status_message = "Market refresh already running";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    controller.runtime.market_data_refresh_in_progress = true;
+    controller.runtime.status_message = "Refreshing market data…";
+  }
+  invalidate_pane_data_snapshot(persistent.root);
+  screen.PostEvent(ftxui::Event::Custom);
+  controller.market_worker = std::jthread([&] {
+    refresh_market_quotes(screen, controller, persistent, caps, true);
+  });
 }
 
 void add_watchlist_symbol(ScreenInteractive& screen,
@@ -1385,7 +1407,7 @@ void add_watchlist_symbol(ScreenInteractive& screen,
   invalidate_pane_data_snapshot(persistent.root);
   screen.PostEvent(ftxui::Event::Custom);
   if (changed) {
-    refresh_market_quotes(screen, controller, persistent, caps);
+    request_market_quotes(screen, controller, persistent, caps);
   }
 }
 
@@ -1431,7 +1453,7 @@ void add_alert_rule(ScreenInteractive& screen,
     if (!persist_alert_rules(persistent.root, rules)) {
       set_status(controller, "Failed to persist alerts");
     } else {
-      refresh_market_quotes(screen, controller, persistent, caps);
+      request_market_quotes(screen, controller, persistent, caps);
     }
   }
 
@@ -2034,7 +2056,7 @@ bool execute_palette_command(ScreenInteractive& screen,
       return true;
     }
     if (current_role == TabRole::Finance) {
-      refresh_market_quotes(screen, controller, state, caps);
+      request_market_quotes(screen, controller, state, caps);
     } else {
       refresh_git_state(controller, state, caps);
       set_status(controller, "Git state refreshed");
@@ -2222,66 +2244,7 @@ Element render_summary(const WorkspacePersistentState& state,
                        bool safe_mode) {
   const auto& current = state.tabs[runtime.visible_tab];
   const auto snapshot = build_pane_data_snapshot(state, runtime, caps);
-  Elements commands;
-  for (const auto& command : state.recent_commands) {
-    commands.push_back(text(command) | color(Color::Yellow));
-  }
-  if (commands.empty()) {
-    commands.push_back(text("No recent commands"));
-  }
-
-  Elements doctor_lines;
-  for (const auto& line : render_doctor_report(caps)) {
-    doctor_lines.push_back(text(line));
-  }
-  Elements capability_lines;
-  for (const auto& line : capability_notes_for(runtime, caps, current.role, safe_mode)) {
-    capability_lines.push_back(paragraph(wrap_text(line)));
-  }
-
-  auto overview = vbox({
-      text("deck") | bold | color(Color::Cyan),
-      text(state.name + "  [" + state.root.string() + "]"),
-      text(std::string("safe_mode: ") + (safe_mode ? "on" : "off")),
-      text(std::string("surface: ") + (runtime.overlays_enabled ? "interactive text" : "safe text")),
-      separator(),
-      text("Focused tab") | bold,
-      text(current.name + " / " + to_string(current.role)),
-      text("Focused pane: " + to_string(current.focused_pane)),
-      text("Watchlist entries: " + std::to_string(runtime.market_entries.size())),
-      text("Market provider: " + runtime.market_data_provider),
-      separator(),
-      text("Recent commands") | bold,
-      vbox(std::move(commands)),
-      separator(),
-      text("Environment") | bold,
-      vbox(std::move(doctor_lines)),
-      separator(),
-      text("Degraded behavior") | bold,
-      vbox(std::move(capability_lines)),
-  });
-
-  auto current_focus = vbox({
-      text("Current tab") | bold,
-      text(current.name + " / " + to_string(current.role)),
-      text("Focused pane: " + to_string(current.focused_pane)),
-      separator(),
-      text("MVP surface") | bold,
-      paragraph(wrap_text(
-          "The active tab now owns the full body layout. Runtime task records, Git summaries, search scope, "
-          "and finance workspace context are rendered inside the pane tree rather than hidden behind a generic "
-          "wrapper.")),
-  });
-
-  return vbox({
-             window(text(current.name + " Layout"), render_layout_tree(current.layout, snapshot, state, runtime, caps)) |
-                 flex,
-             hbox({
-                 window(text("Workspace"), overview | flex) | flex,
-                 window(text("Focus"), current_focus | flex) | flex,
-             }),
-         }) |
-         flex;
+  return render_layout_tree(current.layout, snapshot, state, runtime, caps) | flex;
 }
 
 void launch_ftxui_shell(const WorkspacePersistentState& state,
@@ -2455,14 +2418,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   auto screen = ScreenInteractive::FullscreenAlternateScreen();
   screen.TrackMouse(true);
   if (controller.runtime.market_data_enabled) {
-    controller.market_worker = std::jthread([&](std::stop_token stop_token) {
-      while (!stop_token.stop_requested()) {
-        refresh_market_quotes(screen, controller, state, caps);
-        for (int i = 0; i < 150 && !stop_token.stop_requested(); ++i) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-      }
-    });
+    request_market_quotes(screen, controller, state, caps);
   }
   auto root = CatchEvent(renderer, [&](ftxui::Event event) {
     if (event == ftxui::Event::Character('r')) {
@@ -2499,7 +2455,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
           return state.tabs[controller.runtime.visible_tab].role;
         }();
         if (role == TabRole::Finance) {
-          refresh_market_quotes(screen, controller, state, caps);
+          request_market_quotes(screen, controller, state, caps);
         } else {
           refresh_git_state(controller, state, caps);
           set_status(controller, "Git state refreshed");
@@ -3348,6 +3304,7 @@ int run_app(const CliOptions& options) {
     if (auto loaded = store.load(root)) {
       persistent = *loaded;
     }
+    ensure_workspace_tabs(persistent);
   }
 
   WorkspaceRuntimeState runtime;
