@@ -125,6 +125,10 @@ account,amount,currency
 
 Common controls:
 
+- `Tab` / `Shift+Tab` cycle panes in layout order
+- `Ctrl+W` toggle the focused pane between maximized and tiled
+- `Alt+Arrow` move the nearest matching split by 5%
+- `Ctrl+P` open the fuzzy quick picker for files, actions, tabs, panes, tasks, commands, and project recipes
 - `:` open command palette
 - `:run <command>` run any workspace command (for example, `:run cmake --build build`)
 - `:editor vim`, `:editor nvim`, or `:editor vscode` choose the editor used when opening files (saved per workspace)
@@ -133,6 +137,7 @@ Common controls:
 - `r` run recent command
 - `R` rerun latest task
 - `x` refresh current surface or cancel active task
+- `:clear-tasks` clear persisted task history
 
 Dev is for launching a command beside files and search. Run is for inspecting its recorded output, choosing an older task, rerunning it, or cancelling the active task.
 
@@ -171,6 +176,15 @@ Notes controls:
 
 The Notes tab contains the workspace Scratch pane. Existing saved workspaces are upgraded to include it automatically on the next launch.
 
+Math controls:
+
+- `:calc <expression>` evaluate algebra, calculus, and matrix expressions with SymPy
+- `p` plot the last expression using terminal Braille cells (first free symbol, `[-10, 10]` by default)
+- `:plot-range <min> <max>` change the plot domain
+- `n` append the current result to the active context note
+
+The Math tab is added to existing workspaces automatically. It prefers `.venv/bin/python`, then `venv/bin/python`, then `python3`; SymPy is optional and is never installed automatically. `deck doctor` reports both dependencies. Math input is sent to an isolated, fixed-argv worker with a two-second timeout and a restricted expression namespace.
+
 The Files pane shows a short text preview for the selected file. Binary files and files over 64 KiB are identified without loading their contents.
 
 ## Workspace files
@@ -182,6 +196,8 @@ The Files pane shows a short text preview for the selected file. Binary files an
 - `.deck/alerts.txt`: threshold rules
 - `.deck/scratch.md`: scratchpad
 - `.deck/notes/`: context-linked notes
+
+The SQLite state also retains the newest 50 user task records (with redacted 4 KiB output tails) and newest 100 math results. Probe tasks are not persisted, and commands whose argv appears sensitive remain session-only.
 
 ## Project docs
 

@@ -102,6 +102,12 @@ std::string to_string(PaneKind value) {
       return "scratch";
     case PaneKind::Diff:
       return "diff";
+    case PaneKind::MathInput:
+      return "math-input";
+    case PaneKind::MathResult:
+      return "math-result";
+    case PaneKind::MathPlot:
+      return "math-plot";
   }
   return "unknown";
 }
@@ -118,6 +124,8 @@ std::string to_string(TabRole value) {
       return "finance";
     case TabRole::Notes:
       return "notes";
+    case TabRole::Math:
+      return "math";
   }
   return "unknown";
 }
@@ -162,7 +170,10 @@ std::optional<PaneKind> parse_pane_kind(const std::string& value) {
                                {"portfolio", PaneKind::Portfolio},
                                {"notes", PaneKind::Notes},
                                {"scratch", PaneKind::Scratch},
-                               {"diff", PaneKind::Diff}});
+                               {"diff", PaneKind::Diff},
+                               {"math-input", PaneKind::MathInput},
+                               {"math-result", PaneKind::MathResult},
+                               {"math-plot", PaneKind::MathPlot}});
 }
 
 std::optional<TabRole> parse_tab_role(const std::string& value) {
@@ -171,7 +182,8 @@ std::optional<TabRole> parse_tab_role(const std::string& value) {
                               {"review", TabRole::Review},
                               {"run", TabRole::Run},
                               {"finance", TabRole::Finance},
-                              {"notes", TabRole::Notes}});
+                              {"notes", TabRole::Notes},
+                              {"math", TabRole::Math}});
 }
 
 std::optional<SplitAxis> parse_split_axis(const std::string& value) {

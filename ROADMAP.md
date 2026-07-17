@@ -1,6 +1,6 @@
 # Roadmap
 
-Last updated: 2026-07-13
+Last updated: 2026-07-17
 
 ## Core checklist
 
@@ -17,6 +17,7 @@ Last updated: 2026-07-13
 - [x] Add a lightweight command palette for common actions.
 - [x] Add PTY-backed command execution for terminal-like tasks.
 - [x] Add a dedicated Run-tab task explorer for recent process history.
+- [x] Persist bounded, redacted user task history across launches.
 
 ## Dev workflow
 
@@ -51,6 +52,14 @@ Last updated: 2026-07-13
 - [x] Reduce tab-switch/render lag under repeated redraws.
 - [x] Extend Git review beyond file-level actions into hunk-level staging.
 - [x] Add richer portfolio analytics and performance views.
+- [x] Add keyboard pane focus, maximize, and split resizing.
+- [x] Add a fuzzy mixed-source quick picker with project recipes.
+
+## Math workspace
+
+- [x] Add a dedicated algebra/calculus/matrix tab with Unicode results.
+- [x] Use an optional isolated SymPy worker without automatic installation.
+- [x] Add bounded result history and terminal Braille plots.
 
 ## Exit criteria for MVP
 

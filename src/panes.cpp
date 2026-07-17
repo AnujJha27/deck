@@ -801,7 +801,11 @@ Color pane_accent(PaneKind kind) {
       return Color::Green;
     case PaneKind::Notes:
     case PaneKind::Scratch:
+    case PaneKind::MathInput:
+    case PaneKind::MathResult:
       return Color::Cyan;
+    case PaneKind::MathPlot:
+      return Color::Green;
   }
   return Color::White;
 }
@@ -960,6 +964,12 @@ std::vector<std::string> lines_for_pane(PaneKind kind, const PaneDataSnapshot& s
       return snapshot.scratch_lines;
     case PaneKind::Diff:
       return snapshot.diff_lines;
+    case PaneKind::MathInput:
+      return snapshot.math_input_lines;
+    case PaneKind::MathResult:
+      return snapshot.math_result_lines;
+    case PaneKind::MathPlot:
+      return snapshot.math_plot_lines;
   }
   return {};
 }
@@ -976,6 +986,10 @@ PaneStatus status_for_pane(PaneKind kind, const EnvironmentCapabilities& caps) {
       return PaneStatus::Ready;
     case PaneKind::Scratch:
       return PaneStatus::Ready;
+    case PaneKind::MathInput:
+    case PaneKind::MathResult:
+    case PaneKind::MathPlot:
+      return PaneStatus::Ready;
     default:
       return PaneStatus::Idle;
   }
@@ -986,6 +1000,21 @@ PaneStatus status_for_pane(PaneKind kind, const EnvironmentCapabilities& caps) {
 PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
                                           const WorkspaceRuntimeState& runtime,
                                           const EnvironmentCapabilities& caps) {
+  const auto fill_math = [&](PaneDataSnapshot& snapshot) {
+    snapshot.math_input_lines = {":calc <expression> evaluate", "p plot last expression", "n append result to note"};
+    if (!runtime.math_expression.empty()) {
+      snapshot.math_input_lines.push_back("input: " + runtime.math_expression);
+    }
+    snapshot.math_input_lines.push_back("history: " + std::to_string(runtime.math_history.size()));
+    const auto begin = runtime.math_history.size() > 5 ? runtime.math_history.size() - 5 : 0;
+    for (std::size_t i = begin; i < runtime.math_history.size(); ++i) {
+      snapshot.math_input_lines.push_back("  " + runtime.math_history[i].first + " = " + runtime.math_history[i].second);
+    }
+    std::istringstream result(runtime.math_result.empty() ? "No result yet" : runtime.math_result);
+    for (std::string line; std::getline(result, line);) snapshot.math_result_lines.push_back(line);
+    std::istringstream plot(runtime.math_plot.empty() ? "Press p after evaluating an expression" : runtime.math_plot);
+    for (std::string line; std::getline(plot, line);) snapshot.math_plot_lines.push_back(line);
+  };
   const auto cache_key = state.root.string();
   {
     std::lock_guard<std::mutex> lock(snapshot_cache_mutex);
@@ -1064,6 +1093,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       if (!runtime.status_message.empty()) {
         snapshot.logs_lines.push_back("status: " + runtime.status_message);
       }
+      fill_math(snapshot);
       return snapshot;
     }
   }
@@ -1142,6 +1172,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
   if (!runtime.status_message.empty()) {
     snapshot.logs_lines.push_back("status: " + runtime.status_message);
   }
+  fill_math(snapshot);
 
   {
     std::lock_guard<std::mutex> lock(snapshot_cache_mutex);

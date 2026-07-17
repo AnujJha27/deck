@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-13
+Last updated: 2026-07-17
 
 ## Completed
 
@@ -49,6 +49,10 @@ Last updated: 2026-07-13
 - Task history is bounded and mouse-motion tracking is disabled so a long session or noisy terminal cannot create unnecessary redraw pressure.
 - Existing persisted layouts are upgraded to include the Notes/Scratch tab when it is missing.
 - `PaperAnchor` serialization and the legacy paper schema remain in persistence for now, but they are no longer part of the active MVP surface.
+- Pane focus is now visible; Tab/Shift-Tab cycle panes, Ctrl-W toggles maximize, and Alt-arrows resize the nearest matching split.
+- Ctrl-P provides a ranked mixed-source picker for actions, files, tabs, panes, recent commands, tasks, and safe project recipes.
+- User task history now persists the newest 50 records with 4 KiB redacted output tails and session-only sensitive argv.
+- A dedicated Math tab evaluates restricted SymPy expressions, retains 100 results, and renders 160-sample Braille plots when an isolated Python/SymPy environment is available.
 
 ## Partially implemented
 
@@ -57,7 +61,7 @@ Last updated: 2026-07-13
 - Search pane can run and display `rg` queries and open selected results in `nvim`, but broader file navigation is still missing.
 - File navigation is keyboard-driven and directory-aware, but it is still not a full tree widget.
 - Git and Diff panes now support file-level staging, selected-hunk stage/unstage, selected-file diff inspection, commit submission, and local branch switching/creation, but not remote branch management.
-- The command palette covers core actions, but it is still a typed overlay rather than a richer fuzzy picker or full command router.
+- The typed command palette and fuzzy quick picker coexist; richer per-item previews remain future work.
 - Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, allocation/concentration analytics, and threshold alerts.
 - The shell has multi-tab structure and persistence, but tab-local interactivity remains thin.
 

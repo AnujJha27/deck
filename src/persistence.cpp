@@ -102,6 +102,11 @@ bool WorkspaceStore::ensure_schema(void* db_handle) const {
               "  workspace_root TEXT NOT NULL, task_order INTEGER NOT NULL, arg_order INTEGER NOT NULL,"
               "  arg_text TEXT NOT NULL, PRIMARY KEY(workspace_root, task_order, arg_order)"
               ");"
+              "CREATE TABLE IF NOT EXISTS math_history("
+              "  workspace_root TEXT NOT NULL, history_order INTEGER NOT NULL,"
+              "  expression TEXT NOT NULL, result TEXT NOT NULL,"
+              "  PRIMARY KEY(workspace_root, history_order)"
+              ");"
               "CREATE TABLE IF NOT EXISTS papers("
               "  workspace_root TEXT NOT NULL,"
               "  paper_id TEXT NOT NULL,"
@@ -475,6 +480,47 @@ bool WorkspaceStore::save_tasks(const std::filesystem::path& root,
 
 bool WorkspaceStore::clear_tasks(const std::filesystem::path& root) const {
   return save_tasks(root, {});
+}
+
+std::vector<std::pair<std::string, std::string>> WorkspaceStore::load_math_history(
+    const std::filesystem::path& root) const {
+  SqliteDb db(database_file_for(root));
+  if (!db || !ensure_schema(db.get())) return {};
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db.get(),
+                     "SELECT expression,result FROM math_history WHERE workspace_root=?1 ORDER BY history_order",
+                     -1, &stmt, nullptr);
+  bind_text(stmt, 1, root.string());
+  std::vector<std::pair<std::string, std::string>> history;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    history.emplace_back(column_text(stmt, 0).value_or(""), column_text(stmt, 1).value_or(""));
+  }
+  sqlite3_finalize(stmt);
+  return history;
+}
+
+bool WorkspaceStore::save_math_history(
+    const std::filesystem::path& root,
+    const std::vector<std::pair<std::string, std::string>>& history) const {
+  std::error_code ec;
+  std::filesystem::create_directories(config_dir_for(root), ec);
+  SqliteDb db(database_file_for(root));
+  if (ec || !db || !ensure_schema(db.get()) || !exec(db.get(), "BEGIN;")) return false;
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db.get(), "DELETE FROM math_history WHERE workspace_root=?1", -1, &stmt, nullptr);
+  bind_text(stmt, 1, root.string()); sqlite3_step(stmt); sqlite3_finalize(stmt);
+  sqlite3_prepare_v2(db.get(), "INSERT INTO math_history VALUES(?1,?2,?3,?4)", -1, &stmt, nullptr);
+  const auto begin = history.size() > 100 ? history.size() - 100 : 0;
+  for (std::size_t source = begin, order = 0; source < history.size(); ++source, ++order) {
+    sqlite3_reset(stmt); sqlite3_clear_bindings(stmt);
+    bind_text(stmt, 1, root.string()); sqlite3_bind_int(stmt, 2, static_cast<int>(order));
+    bind_text(stmt, 3, history[source].first); bind_text(stmt, 4, history[source].second);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      sqlite3_finalize(stmt); exec(db.get(), "ROLLBACK;"); return false;
+    }
+  }
+  sqlite3_finalize(stmt);
+  return exec(db.get(), "COMMIT;");
 }
 
 std::vector<PaperRecord> WorkspaceStore::load_papers(const std::filesystem::path& root) const {

@@ -220,6 +220,12 @@ struct WorkspaceRuntimeState {
   bool overlays_enabled = true;
   std::size_t visible_tab = 0;
   std::optional<PaneKind> maximized_pane;
+  std::string math_expression;
+  std::string math_result;
+  std::string math_plot;
+  std::vector<std::pair<std::string, std::string>> math_history;
+  double math_plot_min = -10.0;
+  double math_plot_max = 10.0;
 };
 
 WorkspacePersistentState make_default_workspace(const std::filesystem::path& root);

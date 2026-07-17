@@ -1,4 +1,5 @@
 #include "deck/environment.h"
+#include "deck/process.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -166,6 +167,24 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
                    std::string(std::getenv("COLORTERM")).find("truecolor") != std::string::npos;
   caps.inside_tmux = std::getenv("TMUX") != nullptr;
   caps.is_wsl = file_contains("/proc/version", "Microsoft") || file_contains("/proc/sys/kernel/osrelease", "WSL");
+  for (const auto& candidate : {root / ".venv/bin/python", root / "venv/bin/python"}) {
+    if (std::filesystem::exists(candidate)) {
+      caps.python = true;
+      caps.python_command = candidate.string();
+      break;
+    }
+  }
+  if (!caps.python && executable_on_path("python3")) {
+    caps.python = true;
+    caps.python_command = "python3";
+  }
+  if (caps.python) {
+    ProcessRequest request;
+    request.argv = {caps.python_command, "-I", "-c", "import sympy"};
+    request.cwd = root;
+    request.timeout = std::chrono::milliseconds(2000);
+    caps.sympy = ProcessRunner{}.run(request).exit_code == 0;
+  }
   if (auto finnhub = resolve_env_var_details(root, "FINNHUB_API_KEY")) {
     caps.finnhub_api_key = true;
     caps.finnhub_api_key_source = finnhub->source;
@@ -185,6 +204,8 @@ std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& cap
       std::string("nvim: ") + (caps.nvim ? "ok" : "missing"),
       std::string("vscode (code): ") + (caps.vscode ? "ok" : "missing"),
       std::string("curl: ") + (caps.curl ? "ok" : "missing"),
+      std::string("python: ") + (caps.python ? "ok (" + caps.python_command + ")" : "missing"),
+      std::string("sympy: ") + (caps.sympy ? "ok" : "missing (optional; math tab is disabled)"),
       std::string("finnhub_api_key: ") + (caps.finnhub_api_key ? "present" : "missing") +
           (caps.finnhub_api_key_source.empty() ? "" : " (" + caps.finnhub_api_key_source + ")"),
       std::string("twelve_data_api_key: ") + (caps.twelve_data_api_key ? "present" : "missing") +

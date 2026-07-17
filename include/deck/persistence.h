@@ -34,6 +34,10 @@ class WorkspaceStore {
   std::vector<TaskRecord> load_tasks(const std::filesystem::path& root) const;
   bool save_tasks(const std::filesystem::path& root, const std::vector<TaskRecord>& tasks) const;
   bool clear_tasks(const std::filesystem::path& root) const;
+  std::vector<std::pair<std::string, std::string>> load_math_history(
+      const std::filesystem::path& root) const;
+  bool save_math_history(const std::filesystem::path& root,
+                         const std::vector<std::pair<std::string, std::string>>& history) const;
 
  private:
   bool ensure_schema(void* db_handle) const;

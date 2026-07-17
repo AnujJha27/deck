@@ -21,6 +21,9 @@ enum class PaneKind {
   Notes,
   Scratch,
   Diff,
+  MathInput,
+  MathResult,
+  MathPlot,
 };
 
 enum class TabRole {
@@ -29,6 +32,7 @@ enum class TabRole {
   Run,
   Finance,
   Notes,
+  Math,
 };
 
 enum class SplitAxis {
