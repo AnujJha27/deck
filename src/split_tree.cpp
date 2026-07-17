@@ -158,12 +158,50 @@ bool resize_first_match(SplitNode& node, PaneKind target, double ratio) {
          resize_first_match(*branch.second, target, ratio);
 }
 
+bool resize_nearest_split(SplitNode& node, PaneKind target, SplitAxis axis, double delta) {
+  if (std::holds_alternative<PaneLeaf>(node.node)) {
+    return false;
+  }
+  auto& branch = std::get<SplitBranch>(node.node);
+  SplitNode* child = nullptr;
+  if (contains_pane(*branch.first, target)) {
+    child = branch.first.get();
+  } else if (contains_pane(*branch.second, target)) {
+    child = branch.second.get();
+  } else {
+    return false;
+  }
+  if (resize_nearest_split(*child, target, axis, delta)) {
+    return true;
+  }
+  if (branch.axis != axis) {
+    return false;
+  }
+  branch.ratio = std::clamp(branch.ratio + delta, 0.1, 0.9);
+  return true;
+}
+
 bool contains_pane(const SplitNode& node, PaneKind target) {
   if (std::holds_alternative<PaneLeaf>(node.node)) {
     return std::get<PaneLeaf>(node.node).kind == target;
   }
   const auto& branch = std::get<SplitBranch>(node.node);
   return contains_pane(*branch.first, target) || contains_pane(*branch.second, target);
+}
+
+std::vector<PaneKind> pane_order(const SplitNode& node) {
+  std::vector<PaneKind> result;
+  const auto visit = [&](const auto& self, const SplitNode& current) -> void {
+    if (std::holds_alternative<PaneLeaf>(current.node)) {
+      result.push_back(std::get<PaneLeaf>(current.node).kind);
+      return;
+    }
+    const auto& branch = std::get<SplitBranch>(current.node);
+    self(self, *branch.first);
+    self(self, *branch.second);
+  };
+  visit(visit, node);
+  return result;
 }
 
 }  // namespace deck

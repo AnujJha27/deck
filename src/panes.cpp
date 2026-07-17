@@ -897,8 +897,12 @@ Element styled_pane_row(PaneKind kind, const std::string& line) {
 
 class StaticPane final : public Pane {
  public:
-  StaticPane(PaneKind id, std::string title, std::vector<std::string> lines, PaneStatus status)
-      : id_(id), title_(std::move(title)), lines_(std::move(lines)), status_(status) {
+  StaticPane(PaneKind id,
+             std::string title,
+             std::vector<std::string> lines,
+             PaneStatus status,
+             bool focused)
+      : id_(id), title_(std::move(title)), lines_(std::move(lines)), status_(status), focused_(focused) {
     component_ = Renderer([this] {
       Elements rows;
       for (const auto& line : lines_) {
@@ -910,8 +914,8 @@ class StaticPane final : public Pane {
       const auto accent = pane_accent(id_);
       const auto badge_color = status_ == PaneStatus::Degraded ? Color::Red : accent;
       auto title = hbox({
-          text("● ") | color(accent),
-          text(title_) | bold,
+          text(focused_ ? "◆ " : "· ") | color(focused_ ? Color::Cyan : accent),
+          text(title_) | (focused_ ? bold : dim),
           filler(),
           text(pane_status_label(status_)) | dim | color(badge_color),
       });
@@ -928,6 +932,7 @@ class StaticPane final : public Pane {
   std::string title_;
   std::vector<std::string> lines_;
   PaneStatus status_;
+  bool focused_ = false;
   Component component_;
 };
 
@@ -1172,7 +1177,10 @@ std::unique_ptr<Pane> make_static_pane(PaneKind kind,
                                        const WorkspaceRuntimeState& runtime,
                                        const EnvironmentCapabilities& caps) {
   const auto title = kind == PaneKind::Portfolio ? std::string("Chart") : to_string(kind);
-  return std::make_unique<StaticPane>(kind, title, lines_for_pane(kind, snapshot), status_for_pane(kind, caps));
+  const bool focused = runtime.visible_tab < state.tabs.size() &&
+                       state.tabs[runtime.visible_tab].focused_pane == kind;
+  return std::make_unique<StaticPane>(
+      kind, title, lines_for_pane(kind, snapshot), status_for_pane(kind, caps), focused);
 }
 
 }  // namespace deck

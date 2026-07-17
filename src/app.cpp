@@ -5,6 +5,7 @@
 #include "deck/panes.h"
 #include "deck/persistence.h"
 #include "deck/process.h"
+#include "deck/split_tree.h"
 #include "deck/workspace.h"
 
 #include <ftxui/component/component.hpp>
@@ -2671,6 +2672,10 @@ Element render_summary(const WorkspacePersistentState& state,
                        bool safe_mode) {
   const auto& current = state.tabs[runtime.visible_tab];
   const auto snapshot = build_pane_data_snapshot(state, runtime, caps);
+  if (runtime.maximized_pane && contains_pane(current.layout, *runtime.maximized_pane)) {
+    auto pane = make_static_pane(*runtime.maximized_pane, snapshot, state, runtime, caps);
+    return pane->component()->Render() | flex;
+  }
   return render_layout_tree(current.layout, snapshot, state, runtime, caps) | flex;
 }
 
@@ -2756,6 +2761,7 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
       if (!state.tabs.empty()) {
         controller.runtime.visible_tab =
             static_cast<std::size_t>(std::clamp(tab_index, 0, static_cast<int>(state.tabs.size() - 1)));
+        state.focused_tab = controller.runtime.visible_tab;
       }
       runtime_snapshot = controller.runtime;
     }
@@ -2909,6 +2915,59 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     const bool text_input_active = editor_active || search_overlay.active || ticker_overlay.active ||
                                    alert_overlay.active || command_overlay.active || commit_overlay.active ||
                                    settings_overlay.active;
+    if (!text_input_active && (event == ftxui::Event::Tab || event == ftxui::Event::TabReverse)) {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      auto& tab = state.tabs[controller.runtime.visible_tab];
+      const auto panes = pane_order(tab.layout);
+      if (!panes.empty()) {
+        const auto found = std::find(panes.begin(), panes.end(), tab.focused_pane);
+        const auto current = found == panes.end() ? std::size_t{0}
+                                                  : static_cast<std::size_t>(found - panes.begin());
+        const auto next = event == ftxui::Event::Tab
+                              ? (current + 1) % panes.size()
+                              : (current + panes.size() - 1) % panes.size();
+        tab.focused_pane = panes[next];
+        if (controller.runtime.maximized_pane) {
+          controller.runtime.maximized_pane = tab.focused_pane;
+        }
+        controller.runtime.status_message = "Focus: " + to_string(tab.focused_pane);
+      }
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    if (!text_input_active && event == ftxui::Event::CtrlW) {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      const auto focused = state.tabs[controller.runtime.visible_tab].focused_pane;
+      if (controller.runtime.maximized_pane == focused) {
+        controller.runtime.maximized_pane.reset();
+        controller.runtime.status_message = "Restored pane layout";
+      } else {
+        controller.runtime.maximized_pane = focused;
+        controller.runtime.status_message = "Maximized " + to_string(focused);
+      }
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    if (!text_input_active) {
+      const auto input = event.input();
+      const bool alt_left = input == "\x1b[1;3D" || input == "\x1b[3D";
+      const bool alt_right = input == "\x1b[1;3C" || input == "\x1b[3C";
+      const bool alt_up = input == "\x1b[1;3A" || input == "\x1b[3A";
+      const bool alt_down = input == "\x1b[1;3B" || input == "\x1b[3B";
+      if (alt_left || alt_right || alt_up || alt_down) {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        auto& tab = state.tabs[controller.runtime.visible_tab];
+        const auto axis = (alt_left || alt_right) ? SplitAxis::Horizontal : SplitAxis::Vertical;
+        const double delta = (alt_left || alt_up) ? -0.05 : 0.05;
+        if (resize_nearest_split(tab.layout, tab.focused_pane, axis, delta)) {
+          controller.runtime.status_message = "Resized " + to_string(tab.focused_pane);
+        } else {
+          controller.runtime.status_message = "No matching split to resize";
+        }
+        screen.PostEvent(ftxui::Event::Custom);
+        return true;
+      }
+    }
     if (!text_input_active && event == ftxui::Event::Character('r')) {
       if (!state.recent_commands.empty()) {
         auto argv = split_command_line(state.recent_commands.front());

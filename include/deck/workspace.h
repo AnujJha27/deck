@@ -219,6 +219,7 @@ struct WorkspaceRuntimeState {
   std::size_t next_generation = 1;
   bool overlays_enabled = true;
   std::size_t visible_tab = 0;
+  std::optional<PaneKind> maximized_pane;
 };
 
 WorkspacePersistentState make_default_workspace(const std::filesystem::path& root);

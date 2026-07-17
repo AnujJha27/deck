@@ -51,3 +51,26 @@ DECK_TEST(split_tree_resize) {
   DECK_ASSERT(deck::resize_first_match(tree, deck::PaneKind::Files, 0.6));
   DECK_ASSERT(deck::serialize_split_tree(tree).find("0.6") != std::string::npos);
 }
+
+DECK_TEST(split_tree_leaf_order_and_nearest_resize) {
+  auto tree = deck::make_split(
+      deck::SplitAxis::Horizontal,
+      0.4,
+      deck::make_leaf(deck::PaneKind::Files),
+      deck::make_split(deck::SplitAxis::Vertical,
+                       0.7,
+                       deck::make_leaf(deck::PaneKind::Terminal),
+                       deck::make_leaf(deck::PaneKind::Git)));
+  const auto order = deck::pane_order(tree);
+  DECK_ASSERT(order.size() == 3);
+  DECK_ASSERT(order[0] == deck::PaneKind::Files);
+  DECK_ASSERT(order[1] == deck::PaneKind::Terminal);
+  DECK_ASSERT(order[2] == deck::PaneKind::Git);
+
+  DECK_ASSERT(deck::resize_nearest_split(
+      tree, deck::PaneKind::Terminal, deck::SplitAxis::Vertical, 0.25));
+  DECK_ASSERT(deck::serialize_split_tree(tree).find("0.9") != std::string::npos);
+  DECK_ASSERT(deck::resize_nearest_split(
+      tree, deck::PaneKind::Terminal, deck::SplitAxis::Horizontal, -0.5));
+  DECK_ASSERT(deck::serialize_split_tree(tree).find("0.1") != std::string::npos);
+}
