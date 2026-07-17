@@ -53,6 +53,8 @@ Last updated: 2026-07-17
 - Ctrl-P provides a ranked mixed-source picker for actions, files, tabs, panes, recent commands, tasks, and safe project recipes.
 - User task history now persists the newest 50 records with 4 KiB redacted output tails and session-only sensitive argv.
 - A dedicated Math tab evaluates restricted SymPy expressions, retains 100 results, and renders 160-sample Braille plots when an isolated Python/SymPy environment is available.
+- The Math Input pane now includes quick determinant, inverse, simplification, calculus, and plotting examples.
+- A manual-refresh News tab provides cached AI, AI research, and Web3 security headlines from the public Hacker News Algolia endpoint.
 
 ## Partially implemented
 

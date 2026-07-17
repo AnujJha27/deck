@@ -108,6 +108,12 @@ std::string to_string(PaneKind value) {
       return "math-result";
     case PaneKind::MathPlot:
       return "math-plot";
+    case PaneKind::NewsTopics:
+      return "news-topics";
+    case PaneKind::NewsFeed:
+      return "news-feed";
+    case PaneKind::NewsPreview:
+      return "news-preview";
   }
   return "unknown";
 }
@@ -126,6 +132,8 @@ std::string to_string(TabRole value) {
       return "notes";
     case TabRole::Math:
       return "math";
+    case TabRole::News:
+      return "news";
   }
   return "unknown";
 }
@@ -173,7 +181,10 @@ std::optional<PaneKind> parse_pane_kind(const std::string& value) {
                                {"diff", PaneKind::Diff},
                                {"math-input", PaneKind::MathInput},
                                {"math-result", PaneKind::MathResult},
-                               {"math-plot", PaneKind::MathPlot}});
+                               {"math-plot", PaneKind::MathPlot},
+                               {"news-topics", PaneKind::NewsTopics},
+                               {"news-feed", PaneKind::NewsFeed},
+                               {"news-preview", PaneKind::NewsPreview}});
 }
 
 std::optional<TabRole> parse_tab_role(const std::string& value) {
@@ -183,7 +194,8 @@ std::optional<TabRole> parse_tab_role(const std::string& value) {
                               {"run", TabRole::Run},
                               {"finance", TabRole::Finance},
                               {"notes", TabRole::Notes},
-                              {"math", TabRole::Math}});
+                              {"math", TabRole::Math},
+                              {"news", TabRole::News}});
 }
 
 std::optional<SplitAxis> parse_split_axis(const std::string& value) {

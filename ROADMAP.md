@@ -61,6 +61,11 @@ Last updated: 2026-07-17
 - [x] Use an optional isolated SymPy worker without automatic installation.
 - [x] Add bounded result history and terminal Braille plots.
 
+## News workspace
+
+- [x] Add a manual-refresh, no-key headline feed for AI and Web3 security.
+- [x] Add topic switching, headline selection, URL preview, and browser handoff.
+
 ## Exit criteria for MVP
 
 - Open a workspace and get meaningful pane content immediately.

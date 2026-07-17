@@ -28,6 +28,14 @@ struct TaskRecord {
   bool cancelled = false;
 };
 
+struct NewsEntry {
+  std::string category;
+  std::string title;
+  std::string url;
+  std::string source;
+  std::string published_at;
+};
+
 struct SearchResult {
   std::string path;
   int line = 0;
@@ -226,6 +234,10 @@ struct WorkspaceRuntimeState {
   std::vector<std::pair<std::string, std::string>> math_history;
   double math_plot_min = -10.0;
   double math_plot_max = 10.0;
+  std::vector<NewsEntry> news_entries;
+  std::size_t selected_news_index = 0;
+  std::size_t selected_news_category = 0;
+  bool news_refresh_in_progress = false;
 };
 
 WorkspacePersistentState make_default_workspace(const std::filesystem::path& root);

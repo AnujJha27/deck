@@ -167,6 +167,9 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
                    std::string(std::getenv("COLORTERM")).find("truecolor") != std::string::npos;
   caps.inside_tmux = std::getenv("TMUX") != nullptr;
   caps.is_wsl = file_contains("/proc/version", "Microsoft") || file_contains("/proc/sys/kernel/osrelease", "WSL");
+  if (executable_on_path("wslview")) caps.url_opener = "wslview";
+  else if (executable_on_path("xdg-open")) caps.url_opener = "xdg-open";
+  else if (executable_on_path("open")) caps.url_opener = "open";
   for (const auto& candidate : {root / ".venv/bin/python", root / "venv/bin/python"}) {
     if (std::filesystem::exists(candidate)) {
       caps.python = true;
@@ -206,6 +209,7 @@ std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& cap
       std::string("curl: ") + (caps.curl ? "ok" : "missing"),
       std::string("python: ") + (caps.python ? "ok (" + caps.python_command + ")" : "missing"),
       std::string("sympy: ") + (caps.sympy ? "ok" : "missing (optional; math tab is disabled)"),
+      std::string("url_opener: ") + (caps.url_opener.empty() ? "missing" : caps.url_opener),
       std::string("finnhub_api_key: ") + (caps.finnhub_api_key ? "present" : "missing") +
           (caps.finnhub_api_key_source.empty() ? "" : " (" + caps.finnhub_api_key_source + ")"),
       std::string("twelve_data_api_key: ") + (caps.twelve_data_api_key ? "present" : "missing") +

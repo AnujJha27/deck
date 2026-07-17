@@ -26,6 +26,9 @@ struct PaneDataSnapshot {
   std::vector<std::string> math_input_lines;
   std::vector<std::string> math_result_lines;
   std::vector<std::string> math_plot_lines;
+  std::vector<std::string> news_topics_lines;
+  std::vector<std::string> news_feed_lines;
+  std::vector<std::string> news_preview_lines;
 };
 
 PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,

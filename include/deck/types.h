@@ -24,6 +24,9 @@ enum class PaneKind {
   MathInput,
   MathResult,
   MathPlot,
+  NewsTopics,
+  NewsFeed,
+  NewsPreview,
 };
 
 enum class TabRole {
@@ -33,6 +36,7 @@ enum class TabRole {
   Finance,
   Notes,
   Math,
+  News,
 };
 
 enum class SplitAxis {

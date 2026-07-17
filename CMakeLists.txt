@@ -15,6 +15,7 @@ add_library(deck_core
   src/cli.cpp
   src/environment.cpp
   src/event_bus.cpp
+  src/news.cpp
   src/persistence.cpp
   src/picker.cpp
   src/panes.cpp
@@ -41,6 +42,7 @@ if(BUILD_TESTING)
   add_executable(deck_tests
     tests/test_environment.cpp
     tests/test_main.cpp
+    tests/test_news.cpp
     tests/test_process.cpp
     tests/test_split_tree.cpp
     tests/test_workspace.cpp

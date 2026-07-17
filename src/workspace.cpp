@@ -57,6 +57,16 @@ SplitNode math_layout() {
                                make_leaf(PaneKind::MathPlot)));
 }
 
+SplitNode news_layout() {
+  return make_split(SplitAxis::Horizontal,
+                    0.22,
+                    make_leaf(PaneKind::NewsTopics),
+                    make_split(SplitAxis::Vertical,
+                               0.62,
+                               make_leaf(PaneKind::NewsFeed),
+                               make_leaf(PaneKind::NewsPreview)));
+}
+
 std::string escape(std::string value) {
   for (char& ch : value) {
     if (ch == '\n' || ch == '\r') {
@@ -83,6 +93,7 @@ WorkspacePersistentState make_default_workspace(const std::filesystem::path& roo
       TabPersistentState{"Finance", TabRole::Finance, finance_layout(), PaneKind::Markets},
       TabPersistentState{"Notes", TabRole::Notes, scratch_layout(), PaneKind::Scratch},
       TabPersistentState{"Math", TabRole::Math, math_layout(), PaneKind::MathInput},
+      TabPersistentState{"News", TabRole::News, news_layout(), PaneKind::NewsFeed},
   };
   state.recent_commands = {"cmake --build build", "ctest --test-dir build", "git status --short"};
   return state;

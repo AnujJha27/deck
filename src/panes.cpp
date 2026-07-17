@@ -806,6 +806,11 @@ Color pane_accent(PaneKind kind) {
       return Color::Cyan;
     case PaneKind::MathPlot:
       return Color::Green;
+    case PaneKind::NewsTopics:
+    case PaneKind::NewsFeed:
+      return Color::Cyan;
+    case PaneKind::NewsPreview:
+      return Color::White;
   }
   return Color::White;
 }
@@ -970,6 +975,12 @@ std::vector<std::string> lines_for_pane(PaneKind kind, const PaneDataSnapshot& s
       return snapshot.math_result_lines;
     case PaneKind::MathPlot:
       return snapshot.math_plot_lines;
+    case PaneKind::NewsTopics:
+      return snapshot.news_topics_lines;
+    case PaneKind::NewsFeed:
+      return snapshot.news_feed_lines;
+    case PaneKind::NewsPreview:
+      return snapshot.news_preview_lines;
   }
   return {};
 }
@@ -990,6 +1001,10 @@ PaneStatus status_for_pane(PaneKind kind, const EnvironmentCapabilities& caps) {
     case PaneKind::MathResult:
     case PaneKind::MathPlot:
       return PaneStatus::Ready;
+    case PaneKind::NewsTopics:
+    case PaneKind::NewsFeed:
+    case PaneKind::NewsPreview:
+      return caps.curl ? PaneStatus::Ready : PaneStatus::Degraded;
     default:
       return PaneStatus::Idle;
   }
@@ -1001,7 +1016,15 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
                                           const WorkspaceRuntimeState& runtime,
                                           const EnvironmentCapabilities& caps) {
   const auto fill_math = [&](PaneDataSnapshot& snapshot) {
-    snapshot.math_input_lines = {":calc <expression> evaluate", "p plot last expression", "n append result to note"};
+    snapshot.math_input_lines = {
+        ":calc <expression> evaluate", "p plot last expression", "n append result to note",
+        "Quick examples:",
+        "  det(Matrix([[1,2],[3,4]]))",
+        "  Matrix([[1,2],[3,4]])**-1",
+        "  simplify((x^2-1)/(x-1))",
+        "  diff(sin(x)*exp(x), x)",
+        "  integrate(x^2, (x, 0, 1))",
+    };
     if (!runtime.math_expression.empty()) {
       snapshot.math_input_lines.push_back("input: " + runtime.math_expression);
     }
@@ -1014,6 +1037,36 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
     for (std::string line; std::getline(result, line);) snapshot.math_result_lines.push_back(line);
     std::istringstream plot(runtime.math_plot.empty() ? "Press p after evaluating an expression" : runtime.math_plot);
     for (std::string line; std::getline(plot, line);) snapshot.math_plot_lines.push_back(line);
+  };
+  const auto fill_news = [&](PaneDataSnapshot& snapshot) {
+    static const std::vector<std::string> categories = {"AI World", "AI Research", "Web3 Security"};
+    snapshot.news_topics_lines = {"[/] change topic", "x refresh manually", "No key or paid API"};
+    for (std::size_t category = 0; category < categories.size(); ++category) {
+      const auto count = std::count_if(runtime.news_entries.begin(), runtime.news_entries.end(), [&](const auto& entry) {
+        return entry.category == categories[category];
+      });
+      snapshot.news_topics_lines.push_back(
+          std::string(category == runtime.selected_news_category ? "> " : "  ") + categories[category] +
+          "  " + std::to_string(count));
+    }
+    snapshot.news_feed_lines = {
+        runtime.news_refresh_in_progress ? "status: refreshing" : "status: cached",
+        "j/k select  Enter open  x refresh",
+    };
+    if (runtime.news_entries.empty()) snapshot.news_feed_lines.push_back("Press x to fetch recent headlines");
+    for (std::size_t i = 0, shown = 0; i < runtime.news_entries.size() && shown < 9; ++i) {
+      if (runtime.news_entries[i].category != categories[runtime.selected_news_category]) continue;
+      snapshot.news_feed_lines.push_back(std::string(i == runtime.selected_news_index ? "> " : "  ") +
+                                         runtime.news_entries[i].title);
+      ++shown;
+    }
+    if (runtime.selected_news_index < runtime.news_entries.size()) {
+      const auto& selected = runtime.news_entries[runtime.selected_news_index];
+      snapshot.news_preview_lines = {selected.title, "source: " + selected.source,
+                                     "published: " + selected.published_at, selected.url};
+    } else {
+      snapshot.news_preview_lines = {"No headline selected"};
+    }
   };
   const auto cache_key = state.root.string();
   {
@@ -1094,6 +1147,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
         snapshot.logs_lines.push_back("status: " + runtime.status_message);
       }
       fill_math(snapshot);
+      fill_news(snapshot);
       return snapshot;
     }
   }
@@ -1173,6 +1227,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
     snapshot.logs_lines.push_back("status: " + runtime.status_message);
   }
   fill_math(snapshot);
+  fill_news(snapshot);
 
   {
     std::lock_guard<std::mutex> lock(snapshot_cache_mutex);

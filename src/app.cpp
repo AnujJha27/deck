@@ -2,6 +2,7 @@
 
 #include "deck/environment.h"
 #include "deck/event_bus.h"
+#include "deck/news.h"
 #include "deck/panes.h"
 #include "deck/persistence.h"
 #include "deck/picker.h"
@@ -24,6 +25,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -321,6 +323,20 @@ bool open_in_configured_editor(ScreenInteractive& screen,
   return true;
 }
 
+bool open_url(ScreenInteractive& screen,
+              const EnvironmentCapabilities& caps,
+              const std::filesystem::path& root,
+              const std::string& url) {
+  if (caps.url_opener.empty() || url.empty()) return false;
+  ProcessRunner runner;
+  ProcessRequest request;
+  request.cwd = root;
+  request.argv = {caps.url_opener, url};
+  auto attached = screen.WithRestoredIO([&] { runner.run_attached(request); });
+  attached();
+  return true;
+}
+
 void append_tail(std::string& target, const std::string& chunk, std::size_t limit = 4096) {
   target.append(chunk);
   if (target.size() > limit) {
@@ -413,6 +429,7 @@ struct ShellTaskController {
   std::jthread worker;
   std::jthread search_worker;
   std::jthread market_worker;
+  std::jthread news_worker;
   std::jthread git_diff_worker;
   std::atomic<bool> git_diff_worker_running = false;
   std::atomic<std::size_t> git_diff_generation = 0;
@@ -1609,6 +1626,95 @@ void request_market_quotes(ScreenInteractive& screen,
   });
 }
 
+void request_news_refresh(ScreenInteractive& screen,
+                          ShellTaskController& controller,
+                          const WorkspacePersistentState& persistent,
+                          const EnvironmentCapabilities& caps) {
+  {
+    std::lock_guard<std::mutex> lock(controller.mutex);
+    if (controller.runtime.news_refresh_in_progress) {
+      controller.runtime.status_message = "News refresh already running";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    if (!caps.curl) {
+      controller.runtime.status_message = "News refresh needs curl";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    controller.runtime.news_refresh_in_progress = true;
+    controller.runtime.status_message = "Refreshing news…";
+  }
+  invalidate_pane_data_snapshot(persistent.root);
+  screen.PostEvent(ftxui::Event::Custom);
+  controller.news_worker = std::jthread([&] {
+    const std::vector<std::pair<std::string, std::string>> feeds = {
+        {"AI World", "https://hn.algolia.com/api/v1/search_by_date?query=AI&tags=story&numericFilters=points%3E5&hitsPerPage=12"},
+        {"AI Research", "https://hn.algolia.com/api/v1/search_by_date?query=machine%20learning%20research&tags=story&numericFilters=points%3E3&hitsPerPage=12"},
+        {"Web3 Security", "https://hn.algolia.com/api/v1/search_by_date?query=crypto%20hack&tags=story&numericFilters=points%3E2&hitsPerPage=12"},
+    };
+    std::vector<NewsEntry> entries;
+    std::string error;
+    for (const auto& [category, url] : feeds) {
+      ProcessRequest request;
+      request.cwd = persistent.root;
+      request.argv = {"curl", "--silent", "--show-error", "--fail", "--max-time", "5",
+                      "--user-agent", "deck-news/0.1", url};
+      request.timeout = std::chrono::milliseconds(6000);
+      const auto result = ProcessRunner{}.run(request);
+      if (result.exit_code != 0) {
+        error = result.stderr_text.empty() ? "news request failed" : clip_text(result.stderr_text, 100);
+        continue;
+      }
+      auto parsed = parse_hacker_news_response(result.stdout_text, category);
+      entries.insert(entries.end(), std::make_move_iterator(parsed.begin()), std::make_move_iterator(parsed.end()));
+    }
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      if (!entries.empty()) {
+        controller.runtime.news_entries = std::move(entries);
+        controller.runtime.selected_news_index = 0;
+        controller.runtime.status_message = "News refreshed; cached until the next manual refresh";
+      } else {
+        controller.runtime.status_message = error.empty() ? "No matching news found" : error;
+      }
+      controller.runtime.news_refresh_in_progress = false;
+    }
+    invalidate_pane_data_snapshot(persistent.root);
+    screen.PostEvent(ftxui::Event::Custom);
+  });
+}
+
+std::string news_category_name(std::size_t index) {
+  static const std::vector<std::string> categories = {"AI World", "AI Research", "Web3 Security"};
+  return categories[std::min(index, categories.size() - 1)];
+}
+
+void select_news_category(WorkspaceRuntimeState& runtime, std::size_t category) {
+  runtime.selected_news_category = std::min<std::size_t>(category, 2);
+  const auto name = news_category_name(runtime.selected_news_category);
+  const auto found = std::find_if(runtime.news_entries.begin(), runtime.news_entries.end(), [&](const auto& entry) {
+    return entry.category == name;
+  });
+  runtime.selected_news_index = found == runtime.news_entries.end()
+                                    ? 0
+                                    : static_cast<std::size_t>(found - runtime.news_entries.begin());
+}
+
+void move_news_selection(WorkspaceRuntimeState& runtime, int direction) {
+  std::vector<std::size_t> matches;
+  const auto name = news_category_name(runtime.selected_news_category);
+  for (std::size_t i = 0; i < runtime.news_entries.size(); ++i) {
+    if (runtime.news_entries[i].category == name) matches.push_back(i);
+  }
+  if (matches.empty()) return;
+  auto found = std::find(matches.begin(), matches.end(), runtime.selected_news_index);
+  auto position = found == matches.end() ? std::size_t{0} : static_cast<std::size_t>(found - matches.begin());
+  if (direction > 0) position = std::min(position + 1, matches.size() - 1);
+  else if (position > 0) --position;
+  runtime.selected_news_index = matches[position];
+}
+
 void add_watchlist_symbol(ScreenInteractive& screen,
                           ShellTaskController& controller,
                           const WorkspacePersistentState& persistent,
@@ -1973,6 +2079,8 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
     suggestions.push_back("rerun-task");
   } else if (role == TabRole::Math) {
     suggestions.push_back("plot-range <min> <max>");
+  } else if (role == TabRole::News) {
+    suggestions.push_back("refresh-news");
   } else {
     suggestions.push_back("refresh");
   }
@@ -1993,6 +2101,8 @@ std::string controls_for_role(TabRole role) {
       return "E context note   e scratchpad   Ctrl+S save   Ctrl+R reload   Esc stop editing";
     case TabRole::Math:
       return ":calc expression   p plot   n append result to note   :plot-range min max";
+    case TabRole::News:
+      return "[/] topic   j/k headline   Enter open   x refresh";
   }
   return {};
 }
@@ -2596,12 +2706,18 @@ bool execute_palette_command(ScreenInteractive& screen,
     }
     if (current_role == TabRole::Finance) {
       request_market_quotes(screen, controller, state, caps);
+    } else if (current_role == TabRole::News) {
+      request_news_refresh(screen, controller, state, caps);
     } else {
       refresh_git_state(controller, state, caps);
       set_status(controller, "Git state refreshed");
       invalidate_pane_data_snapshot(state.root);
       screen.PostEvent(ftxui::Event::Custom);
     }
+    return true;
+  }
+  if (command == "refresh-news") {
+    request_news_refresh(screen, controller, state, caps);
     return true;
   }
   if (command == "next-file" || command == "prev-file") {
@@ -3275,6 +3391,8 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
         }();
         if (role == TabRole::Finance) {
           request_market_quotes(screen, controller, state, caps);
+        } else if (role == TabRole::News) {
+          request_news_refresh(screen, controller, state, caps);
         } else {
           refresh_git_state(controller, state, caps);
           set_status(controller, "Git state refreshed");
@@ -3926,6 +4044,8 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
                 std::min(controller.runtime.selected_market_index + 1, controller.runtime.market_entries.size() - 1);
             refresh_note_context(state.root, controller.runtime);
           }
+        } else if (role == TabRole::News) {
+          move_news_selection(controller.runtime, 1);
         } else if (role == TabRole::Review && controller.runtime.review_files_mode) {
           if (!controller.runtime.files_entries.empty()) {
             controller.runtime.selected_file_index =
@@ -3967,6 +4087,8 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
             --controller.runtime.selected_market_index;
             refresh_note_context(state.root, controller.runtime);
           }
+        } else if (role == TabRole::News) {
+          move_news_selection(controller.runtime, -1);
         } else if (role == TabRole::Review && controller.runtime.review_files_mode) {
           if (controller.runtime.selected_file_index > 0) {
             --controller.runtime.selected_file_index;
@@ -3995,10 +4117,14 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     }
     if (event == ftxui::Event::Character(']')) {
       bool handled_review = false;
+      bool handled_news = false;
       {
         std::lock_guard<std::mutex> lock(controller.mutex);
         const auto role = state.tabs[controller.runtime.visible_tab].role;
-        if (role == TabRole::Review) {
+        if (role == TabRole::News) {
+          handled_news = true;
+          select_news_category(controller.runtime, (controller.runtime.selected_news_category + 1) % 3);
+        } else if (role == TabRole::Review) {
           handled_review = true;
           if (!controller.runtime.diff_hunks.empty()) {
             controller.runtime.selected_diff_hunk =
@@ -4010,7 +4136,7 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
           refresh_note_context(state.root, controller.runtime);
         }
       }
-      if (handled_review) {
+      if (handled_review || handled_news) {
         invalidate_pane_data_snapshot(state.root);
         screen.PostEvent(ftxui::Event::Custom);
       }
@@ -4018,10 +4144,14 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     }
     if (event == ftxui::Event::Character('[')) {
       bool handled_review = false;
+      bool handled_news = false;
       {
         std::lock_guard<std::mutex> lock(controller.mutex);
         const auto role = state.tabs[controller.runtime.visible_tab].role;
-        if (role == TabRole::Review) {
+        if (role == TabRole::News) {
+          handled_news = true;
+          select_news_category(controller.runtime, (controller.runtime.selected_news_category + 2) % 3);
+        } else if (role == TabRole::Review) {
           handled_review = true;
           if (controller.runtime.selected_diff_hunk > 0) {
             --controller.runtime.selected_diff_hunk;
@@ -4031,7 +4161,7 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
           refresh_note_context(state.root, controller.runtime);
         }
       }
-      if (handled_review) {
+      if (handled_review || handled_news) {
         invalidate_pane_data_snapshot(state.root);
         screen.PostEvent(ftxui::Event::Custom);
       }
@@ -4042,6 +4172,24 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
         std::lock_guard<std::mutex> lock(controller.mutex);
         return state.tabs[controller.runtime.visible_tab].role;
       }();
+      if (role == TabRole::News) {
+        std::optional<NewsEntry> selected_news;
+        {
+          std::lock_guard<std::mutex> lock(controller.mutex);
+          if (controller.runtime.selected_news_index < controller.runtime.news_entries.size()) {
+            selected_news = controller.runtime.news_entries[controller.runtime.selected_news_index];
+          }
+        }
+        if (!selected_news) {
+          set_status(controller, "No news headline selected");
+        } else if (open_url(screen, caps, state.root, selected_news->url)) {
+          set_status(controller, "Opened headline in browser");
+        } else {
+          set_status(controller, "No URL opener found; URL is visible in Preview");
+        }
+        screen.PostEvent(ftxui::Event::Custom);
+        return true;
+      }
       if (role == TabRole::Finance) {
         std::optional<MarketEntry> selected_market;
         {
@@ -4207,6 +4355,10 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
   if (controller.market_worker.joinable()) {
     controller.market_worker.request_stop();
     controller.market_worker.join();
+  }
+  if (controller.news_worker.joinable()) {
+    controller.news_worker.request_stop();
+    controller.news_worker.join();
   }
   if (controller.git_diff_worker.joinable()) {
     controller.git_diff_worker.join();
