@@ -55,6 +55,7 @@ Last updated: 2026-07-17
 - A dedicated Math tab evaluates restricted SymPy expressions, retains 100 results, and renders 160-sample Braille plots when an isolated Python/SymPy environment is available.
 - The Math Input pane now includes quick determinant, inverse, simplification, calculus, and plotting examples.
 - A manual-refresh News tab provides cached AI, AI research, and Web3 security headlines from the public Hacker News Algolia endpoint.
+- News Preview renders Hacker News text posts immediately and can fetch a bounded, session-cached readable excerpt for a selected public HTTPS article.
 
 ## Partially implemented
 

@@ -62,6 +62,25 @@ std::vector<std::string> split_lines(const std::string& text, std::size_t limit)
   return lines;
 }
 
+std::vector<std::string> wrapped_lines(const std::string& text,
+                                       std::size_t width = 72,
+                                       std::size_t limit = 12) {
+  std::vector<std::string> lines;
+  std::istringstream words(text);
+  std::string line;
+  std::string word;
+  while (words >> word && lines.size() < limit) {
+    if (!line.empty() && line.size() + word.size() + 1 > width) {
+      lines.push_back(std::move(line));
+      line.clear();
+    }
+    if (!line.empty()) line.push_back(' ');
+    line += word;
+  }
+  if (!line.empty() && lines.size() < limit) lines.push_back(std::move(line));
+  return lines;
+}
+
 std::string summarize_list(const std::vector<std::string>& values, std::size_t limit = 3) {
   if (values.empty()) {
     return "none";
@@ -1064,6 +1083,20 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       const auto& selected = runtime.news_entries[runtime.selected_news_index];
       snapshot.news_preview_lines = {selected.title, "source: " + selected.source,
                                      "published: " + selected.published_at, selected.url};
+      snapshot.news_preview_lines.push_back(runtime.news_preview_in_progress ? "status: fetching article preview" :
+                                                                              "v fetch article text");
+      auto preview = selected.summary;
+      if (const auto cached = runtime.news_article_previews.find(selected.url);
+          cached != runtime.news_article_previews.end()) {
+        preview = cached->second;
+      }
+      if (!preview.empty()) {
+        snapshot.news_preview_lines.push_back("Preview:");
+        auto lines = wrapped_lines(preview);
+        snapshot.news_preview_lines.insert(snapshot.news_preview_lines.end(), lines.begin(), lines.end());
+      } else {
+        snapshot.news_preview_lines.push_back("No Hacker News text; press v for a bounded external preview");
+      }
     } else {
       snapshot.news_preview_lines = {"No headline selected"};
     }

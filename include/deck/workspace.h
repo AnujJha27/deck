@@ -34,6 +34,7 @@ struct NewsEntry {
   std::string url;
   std::string source;
   std::string published_at;
+  std::string summary;
 };
 
 struct SearchResult {
@@ -238,6 +239,8 @@ struct WorkspaceRuntimeState {
   std::size_t selected_news_index = 0;
   std::size_t selected_news_category = 0;
   bool news_refresh_in_progress = false;
+  bool news_preview_in_progress = false;
+  std::unordered_map<std::string, std::string> news_article_previews;
 };
 
 WorkspacePersistentState make_default_workspace(const std::filesystem::path& root);

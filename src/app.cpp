@@ -431,6 +431,7 @@ struct ShellTaskController {
   std::jthread search_worker;
   std::jthread market_worker;
   std::jthread news_worker;
+  std::jthread news_preview_worker;
   std::jthread git_diff_worker;
   std::atomic<bool> git_diff_worker_running = false;
   std::atomic<std::size_t> git_diff_generation = 0;
@@ -1716,6 +1717,65 @@ void move_news_selection(WorkspaceRuntimeState& runtime, int direction) {
   runtime.selected_news_index = matches[position];
 }
 
+void request_news_article_preview(ScreenInteractive& screen,
+                                  ShellTaskController& controller,
+                                  const WorkspacePersistentState& persistent,
+                                  const EnvironmentCapabilities& caps) {
+  std::optional<NewsEntry> selected;
+  {
+    std::lock_guard<std::mutex> lock(controller.mutex);
+    if (controller.runtime.news_preview_in_progress) {
+      controller.runtime.status_message = "Article preview already loading";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    if (!caps.curl || controller.runtime.selected_news_index >= controller.runtime.news_entries.size()) {
+      controller.runtime.status_message = caps.curl ? "No headline selected" : "Article preview needs curl";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    selected = controller.runtime.news_entries[controller.runtime.selected_news_index];
+    if (!safe_article_url(selected->url)) {
+      controller.runtime.status_message = "Preview blocked: only public HTTPS article URLs are allowed";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    if (controller.runtime.news_article_previews.contains(selected->url)) {
+      controller.runtime.status_message = "Article preview is already cached";
+      screen.PostEvent(ftxui::Event::Custom);
+      return;
+    }
+    controller.runtime.news_preview_in_progress = true;
+    controller.runtime.status_message = "Fetching bounded article preview…";
+  }
+  invalidate_pane_data_snapshot(persistent.root);
+  screen.PostEvent(ftxui::Event::Custom);
+  controller.news_preview_worker = std::jthread([&, selected = *selected] {
+    ProcessRequest request;
+    request.cwd = persistent.root;
+    request.argv = {"curl", "--silent", "--show-error", "--location", "--max-redirs", "3",
+                    "--max-time", "7", "--max-filesize", "262144", "--proto", "=https",
+                    "--proto-redir", "=https", "--user-agent", "deck-news-preview/0.1", selected.url};
+    request.timeout = std::chrono::milliseconds(8000);
+    const auto result = ProcessRunner{}.run(request);
+    const auto preview = readable_article_text(result.stdout_text);
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      controller.runtime.news_preview_in_progress = false;
+      if (!preview.empty()) {
+        controller.runtime.news_article_previews[selected.url] = preview;
+        controller.runtime.status_message = "Article preview cached for this session";
+      } else {
+        controller.runtime.status_message = result.stderr_text.empty()
+                                                ? "Article did not expose readable HTML text"
+                                                : clip_text(result.stderr_text, 100);
+      }
+    }
+    invalidate_pane_data_snapshot(persistent.root);
+    screen.PostEvent(ftxui::Event::Custom);
+  });
+}
+
 void add_watchlist_symbol(ScreenInteractive& screen,
                           ShellTaskController& controller,
                           const WorkspacePersistentState& persistent,
@@ -2103,7 +2163,7 @@ std::string controls_for_role(TabRole role) {
     case TabRole::Math:
       return ":calc expression   p plot   n append result to note   :plot-range min max";
     case TabRole::News:
-      return "[/] topic   j/k headline   Enter open   x refresh";
+      return "[/] topic   j/k headline   v preview text   Enter open   x refresh";
   }
   return {};
 }
@@ -3342,6 +3402,11 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
       screen.PostEvent(ftxui::Event::Custom);
       return true;
     }
+    if (!text_input_active && event == ftxui::Event::Character('v') &&
+        state.tabs[controller.runtime.visible_tab].role == TabRole::News) {
+      request_news_article_preview(screen, controller, state, caps);
+      return true;
+    }
     if (!text_input_active && event == ftxui::Event::Character('n') &&
         state.tabs[controller.runtime.visible_tab].role == TabRole::Math) {
       std::lock_guard<std::mutex> lock(controller.mutex);
@@ -4364,6 +4429,10 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
   if (controller.news_worker.joinable()) {
     controller.news_worker.request_stop();
     controller.news_worker.join();
+  }
+  if (controller.news_preview_worker.joinable()) {
+    controller.news_preview_worker.request_stop();
+    controller.news_preview_worker.join();
   }
   if (controller.git_diff_worker.joinable()) {
     controller.git_diff_worker.join();

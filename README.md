@@ -193,9 +193,10 @@ News controls:
 - `x` manually fetch recent headlines
 - `[` and `]` switch between AI World, AI Research, and Web3 Security
 - `j` and `k` select a headline
+- `v` fetch a bounded readable-text preview for the selected external article
 - `Enter` open the selected story through `wslview`, `xdg-open`, macOS `open`, or WSL's Windows browser bridge
 
-News uses the public Hacker News Algolia search endpoint without an API key or paid plan. Results stay cached in memory until you manually refresh; Deck does not poll in the background. Existing workspaces gain the News tab automatically.
+Hacker News text posts appear in Preview immediately. External article text is fetched only when you press `v`, is limited to public HTTPS URLs and 256 KiB of HTML, and is reduced to a short session-cached excerpt. News uses the public Hacker News Algolia search endpoint without an API key or paid plan. Results stay cached in memory until you manually refresh; Deck does not poll in the background. Existing workspaces gain the News tab automatically.
 
 The Files pane shows a short text preview for the selected file. Binary files and files over 64 KiB are identified without loading their contents.
 
