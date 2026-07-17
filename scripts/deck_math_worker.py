@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Small isolated SymPy worker. Protocol: action NUL expression NUL min NUL max."""
+"""Hardened SymPy worker. Protocol: action NUL expression NUL min NUL max."""
 
 import ast
 import math
+import signal
 import sys
 
 
@@ -23,6 +24,14 @@ action = raw[0] if raw else "calc"
 expression = raw[1].strip() if len(raw) > 1 else ""
 if not expression or len(expression) > 4096:
     fail("Expression is empty or too large")
+
+
+def evaluation_timeout(_signum, _frame):
+    fail("Evaluation timed out after 2 seconds")
+
+
+signal.signal(signal.SIGALRM, evaluation_timeout)
+signal.setitimer(signal.ITIMER_REAL, 2.0)
 
 symbols = {name: sp.Symbol(name) for name in ("x", "y", "z", "t", "n")}
 allowed = {
@@ -112,6 +121,11 @@ if action == "plot":
         fail("Invalid plot range")
     if not low < high:
         fail("Plot minimum must be less than maximum")
-    sys.stdout.write("ok\0" + braille_plot(result, variable, low, high))
+    rendered = braille_plot(result, variable, low, high)
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    sys.stdout.write("ok\0" + rendered)
 else:
-    sys.stdout.write("ok\0" + str(result) + "\0" + sp.pretty(result, use_unicode=True))
+    plain = str(result)
+    pretty = sp.pretty(result, use_unicode=True)
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    sys.stdout.write("ok\0" + plain + "\0" + pretty)

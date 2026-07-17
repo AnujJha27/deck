@@ -121,3 +121,13 @@ DECK_TEST(safe_mode_renders_read_only_summary) {
   DECK_ASSERT(captured.str().find("deck safe mode (read-only summary)") != std::string::npos);
   DECK_ASSERT(captured.str().find("interactive workspace") != std::string::npos);
 }
+
+DECK_TEST(wsl_url_opener_uses_fixed_rundll32_arguments) {
+  deck::EnvironmentCapabilities caps;
+  caps.url_opener = "rundll32.exe";
+  const auto argv = deck::url_open_argv(caps, "https://example.com/a?x=1&y=2");
+  DECK_ASSERT(argv.size() == 3);
+  DECK_ASSERT(argv[0] == "rundll32.exe");
+  DECK_ASSERT(argv[1] == "url.dll,FileProtocolHandler");
+  DECK_ASSERT(argv[2] == "https://example.com/a?x=1&y=2");
+}

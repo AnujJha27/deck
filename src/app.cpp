@@ -331,7 +331,8 @@ bool open_url(ScreenInteractive& screen,
   ProcessRunner runner;
   ProcessRequest request;
   request.cwd = root;
-  request.argv = {caps.url_opener, url};
+  request.argv = url_open_argv(caps, url);
+  if (request.argv.empty()) return false;
   auto attached = screen.WithRestoredIO([&] { runner.run_attached(request); });
   attached();
   return true;
@@ -2117,14 +2118,18 @@ std::vector<std::string> run_math_worker(const WorkspacePersistentState& state,
     return {"error", "Python with SymPy is unavailable; see deck doctor"};
   }
   ProcessRequest request;
-  request.argv = {caps.python_command, "-I", std::filesystem::absolute(DECK_MATH_WORKER_PATH).string()};
+  request.argv = {caps.python_command,
+                  "-E",
+                  "-s",
+                  "-P",
+                  std::filesystem::absolute(DECK_MATH_WORKER_PATH).string()};
   request.cwd = state.root;
-  request.timeout = std::chrono::milliseconds(2000);
+  request.timeout = std::chrono::milliseconds(10000);
   std::ostringstream input;
   input << action << '\0' << expression << '\0' << minimum << '\0' << maximum;
   request.stdin_text = input.str();
   const auto result = ProcessRunner{}.run(request);
-  if (result.timed_out) return {"error", "Math evaluation timed out after 2 seconds"};
+  if (result.timed_out) return {"error", "Math worker startup timed out"};
   if (result.exit_code != 0) return {"error", clip_text(result.stderr_text, 4096)};
   std::vector<std::string> fields;
   std::size_t cursor = 0;

@@ -186,14 +186,14 @@ Math controls:
 
 The Input pane includes ready-to-type examples for determinants, matrix inverses, simplification, derivatives, definite integrals, and plots. The intended use is quick symbolic or numeric scratch work; use a notebook when you need a longer derivation.
 
-The Math tab is added to existing workspaces automatically. It prefers `.venv/bin/python`, then `venv/bin/python`, then `python3`; SymPy is optional and is never installed automatically. `deck doctor` reports both dependencies. Math input is sent to an isolated, fixed-argv worker with a two-second timeout and a restricted expression namespace.
+The Math tab is added to existing workspaces automatically. It prefers `.venv/bin/python`, then `venv/bin/python`, then `python3`; SymPy is optional and is never installed automatically. `deck doctor` reports both dependencies. Math input is sent to a hardened, fixed-argv worker with Python environment/user-path/script-path loading disabled, a two-second timeout, and a restricted expression namespace.
 
 News controls:
 
 - `x` manually fetch recent headlines
 - `[` and `]` switch between AI World, AI Research, and Web3 Security
 - `j` and `k` select a headline
-- `Enter` open the selected story when `wslview`, `xdg-open`, or `open` is available
+- `Enter` open the selected story through `wslview`, `xdg-open`, macOS `open`, or WSL's Windows browser bridge
 
 News uses the public Hacker News Algolia search endpoint without an API key or paid plan. Results stay cached in memory until you manually refresh; Deck does not poll in the background. Existing workspaces gain the News tab automatically.
 

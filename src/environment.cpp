@@ -170,6 +170,7 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
   if (executable_on_path("wslview")) caps.url_opener = "wslview";
   else if (executable_on_path("xdg-open")) caps.url_opener = "xdg-open";
   else if (executable_on_path("open")) caps.url_opener = "open";
+  else if (caps.is_wsl && executable_on_path("rundll32.exe")) caps.url_opener = "rundll32.exe";
   for (const auto& candidate : {root / ".venv/bin/python", root / "venv/bin/python"}) {
     if (std::filesystem::exists(candidate)) {
       caps.python = true;
@@ -183,9 +184,9 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
   }
   if (caps.python) {
     ProcessRequest request;
-    request.argv = {caps.python_command, "-I", "-c", "import sympy"};
+    request.argv = {caps.python_command, "-E", "-s", "-P", "-c", "import sympy"};
     request.cwd = root;
-    request.timeout = std::chrono::milliseconds(2000);
+    request.timeout = std::chrono::milliseconds(8000);
     caps.sympy = ProcessRunner{}.run(request).exit_code == 0;
   }
   if (auto finnhub = resolve_env_var_details(root, "FINNHUB_API_KEY")) {
@@ -221,6 +222,15 @@ std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& cap
       std::string("wsl: ") + (caps.is_wsl ? "yes" : "no"),
       std::string("tmux: ") + (caps.inside_tmux ? "inside" : "no"),
   };
+}
+
+std::vector<std::string> url_open_argv(const EnvironmentCapabilities& caps,
+                                       const std::string& url) {
+  if (caps.url_opener.empty() || url.empty()) return {};
+  if (caps.url_opener == "rundll32.exe") {
+    return {caps.url_opener, "url.dll,FileProtocolHandler", url};
+  }
+  return {caps.url_opener, url};
 }
 
 }  // namespace deck

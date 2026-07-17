@@ -33,5 +33,7 @@ struct EnvironmentCapabilities {
 EnvironmentCapabilities detect_environment(const std::filesystem::path& root);
 std::optional<std::string> resolve_env_var(const std::filesystem::path& root, const std::string& key);
 std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& caps);
+std::vector<std::string> url_open_argv(const EnvironmentCapabilities& caps,
+                                       const std::string& url);
 
 }  // namespace deck
