@@ -820,6 +820,81 @@ std::string pane_status_label(PaneStatus status) {
   return "unknown";
 }
 
+Element candle_row(const std::string& line) {
+  constexpr std::string_view up = "█";
+  constexpr std::string_view down = "▓";
+  Elements segments;
+  std::size_t cursor = 0;
+  while (cursor < line.size()) {
+    const auto up_pos = line.find(up, cursor);
+    const auto down_pos = line.find(down, cursor);
+    const auto next = std::min(up_pos, down_pos);
+    if (next == std::string::npos) {
+      segments.push_back(text(line.substr(cursor)));
+      break;
+    }
+    if (next > cursor) {
+      segments.push_back(text(line.substr(cursor, next - cursor)));
+    }
+    const auto rising = next == up_pos;
+    const auto glyph = rising ? up : down;
+    segments.push_back(text(std::string(glyph)) | color(rising ? Color::Green : Color::Yellow));
+    cursor = next + glyph.size();
+  }
+  return hbox(std::move(segments));
+}
+
+Element styled_pane_row(PaneKind kind, const std::string& line) {
+  if (kind == PaneKind::Portfolio && (line.find("█") != std::string::npos || line.find("▓") != std::string::npos)) {
+    return candle_row(line);
+  }
+  auto row = text(line);
+  if (line.starts_with("> ")) {
+    return row | bold | color(Color::Cyan);
+  }
+  if (kind == PaneKind::Diff) {
+    if (line.starts_with("+") && !line.starts_with("+++")) {
+      return row | color(Color::Green);
+    }
+    if (line.starts_with("-") && !line.starts_with("---")) {
+      return row | color(Color::Red);
+    }
+    if (line.starts_with("  @@") || line.starts_with("@@")) {
+      return row | color(Color::Cyan);
+    }
+  }
+  if (kind == PaneKind::Git) {
+    if (line.find(" added]") != std::string::npos) {
+      return row | color(Color::Green);
+    }
+    if (line.find(" deleted]") != std::string::npos) {
+      return row | color(Color::Red);
+    }
+    if (line.find(" modified]") != std::string::npos || line.find("untracked") != std::string::npos) {
+      return row | color(Color::Yellow);
+    }
+  }
+  if (kind == PaneKind::Tasks || kind == PaneKind::Terminal || kind == PaneKind::Logs) {
+    if (line.find("[failed]") != std::string::npos || line.find("exit=") != std::string::npos) {
+      return row | color(Color::Red);
+    }
+    if (line.find("[exited]") != std::string::npos) {
+      return row | color(Color::Green);
+    }
+    if (line.find("[running]") != std::string::npos || line.find("[starting]") != std::string::npos) {
+      return row | color(Color::Cyan);
+    }
+  }
+  if (line.starts_with("Preview:") || line.starts_with("selected:") || line.starts_with("focus:")) {
+    return row | color(Color::Cyan);
+  }
+  if (line.starts_with("status:") || line.starts_with("controls:") || line.starts_with("enter ") ||
+      line.starts_with("hunks:")) {
+    return row | dim;
+  }
+  return row;
+}
+
 class StaticPane final : public Pane {
  public:
   StaticPane(PaneKind id, std::string title, std::vector<std::string> lines, PaneStatus status)
@@ -827,17 +902,7 @@ class StaticPane final : public Pane {
     component_ = Renderer([this] {
       Elements rows;
       for (const auto& line : lines_) {
-        auto row = text(line);
-        if (line.starts_with("> ")) {
-          row = row | bold | color(Color::Cyan);
-        } else if (line.starts_with("Preview:") || line.starts_with("selected:") ||
-                   line.starts_with("focus:")) {
-          row = row | color(Color::Cyan);
-        } else if (line.starts_with("status:") || line.starts_with("controls:") ||
-                   line.starts_with("enter ") || line.starts_with("hunks:")) {
-          row = row | dim;
-        }
-        rows.push_back(std::move(row));
+        rows.push_back(styled_pane_row(id_, line));
       }
       if (rows.empty()) {
         rows.push_back(text("No data"));

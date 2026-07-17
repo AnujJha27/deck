@@ -2725,8 +2725,23 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     const auto& current = state.tabs[runtime_snapshot.visible_tab];
     const auto status = runtime_snapshot.status_message.empty() ? std::string("ready")
                                                                   : runtime_snapshot.status_message;
+    auto status_element = text(status);
+    const auto normalized_status = lower_copy(status);
+    if (normalized_status == "ready") {
+      status_element = status_element | dim;
+    } else if (normalized_status.find("fail") != std::string::npos ||
+               normalized_status.find("error") != std::string::npos ||
+               normalized_status.find("unavailable") != std::string::npos) {
+      status_element = status_element | color(Color::Red);
+    } else if (normalized_status.find("missing") != std::string::npos ||
+               normalized_status.find("limited") != std::string::npos ||
+               normalized_status.find("not found") != std::string::npos) {
+      status_element = status_element | color(Color::Yellow);
+    } else {
+      status_element = status_element | color(Color::Cyan);
+    }
     return hbox({
-               text(status) | (status == "ready" ? dim : color(Color::Cyan)),
+               status_element,
                filler(),
                text(current.name + ": " + controls_for_role(current.role)) | dim,
                text("   ·   , settings   : commands   q quit") | dim,
@@ -2748,7 +2763,18 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
       runtime_snapshot.visible_tab =
           static_cast<std::size_t>(std::clamp(tab_index, 0, static_cast<int>(state.tabs.size() - 1)));
     }
-    auto tab_bar = tabs->Render() | color(Color::Cyan) | xflex;
+    Elements rendered_tabs;
+    for (std::size_t i = 0; i < tab_names.size(); ++i) {
+      auto tab = text(" " + tab_names[i] + " ");
+      if (static_cast<int>(i) == tab_index) {
+        tab = tab | bold | underlined | color(Color::Cyan);
+      } else {
+        tab = tab | dim;
+      }
+      rendered_tabs.push_back(std::move(tab));
+      rendered_tabs.push_back(text(" "));
+    }
+    auto tab_bar = hbox(std::move(rendered_tabs)) | xflex;
     auto body = render_summary(state, runtime_snapshot, caps, safe_mode);
     Element content = vbox({
                header->Render(),
