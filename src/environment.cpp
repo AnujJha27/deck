@@ -1,5 +1,4 @@
 #include "deck/environment.h"
-#include "deck/process.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -171,24 +170,6 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
   else if (executable_on_path("xdg-open")) caps.url_opener = "xdg-open";
   else if (executable_on_path("open")) caps.url_opener = "open";
   else if (caps.is_wsl && executable_on_path("rundll32.exe")) caps.url_opener = "rundll32.exe";
-  for (const auto& candidate : {root / ".venv/bin/python", root / "venv/bin/python"}) {
-    if (std::filesystem::exists(candidate)) {
-      caps.python = true;
-      caps.python_command = candidate.string();
-      break;
-    }
-  }
-  if (!caps.python && executable_on_path("python3")) {
-    caps.python = true;
-    caps.python_command = "python3";
-  }
-  if (caps.python) {
-    ProcessRequest request;
-    request.argv = {caps.python_command, "-E", "-s", "-P", "-c", "import sympy"};
-    request.cwd = root;
-    request.timeout = std::chrono::milliseconds(8000);
-    caps.sympy = ProcessRunner{}.run(request).exit_code == 0;
-  }
   if (auto finnhub = resolve_env_var_details(root, "FINNHUB_API_KEY")) {
     caps.finnhub_api_key = true;
     caps.finnhub_api_key_source = finnhub->source;
@@ -208,8 +189,6 @@ std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& cap
       std::string("nvim: ") + (caps.nvim ? "ok" : "missing"),
       std::string("vscode (code): ") + (caps.vscode ? "ok" : "missing"),
       std::string("curl: ") + (caps.curl ? "ok" : "missing"),
-      std::string("python: ") + (caps.python ? "ok (" + caps.python_command + ")" : "missing"),
-      std::string("sympy: ") + (caps.sympy ? "ok" : "missing (optional; math tab is disabled)"),
       std::string("url_opener: ") + (caps.url_opener.empty() ? "missing" : caps.url_opener),
       std::string("finnhub_api_key: ") + (caps.finnhub_api_key ? "present" : "missing") +
           (caps.finnhub_api_key_source.empty() ? "" : " (" + caps.finnhub_api_key_source + ")"),

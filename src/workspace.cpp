@@ -47,16 +47,6 @@ SplitNode scratch_layout() {
   return make_split(SplitAxis::Vertical, 0.50, make_leaf(PaneKind::Notes), make_leaf(PaneKind::Scratch));
 }
 
-SplitNode math_layout() {
-  return make_split(SplitAxis::Horizontal,
-                    0.32,
-                    make_leaf(PaneKind::MathInput),
-                    make_split(SplitAxis::Vertical,
-                               0.50,
-                               make_leaf(PaneKind::MathResult),
-                               make_leaf(PaneKind::MathPlot)));
-}
-
 SplitNode news_layout_with_feed_ratio(double feed_ratio) {
   return make_split(SplitAxis::Horizontal,
                     0.22,
@@ -94,7 +84,6 @@ WorkspacePersistentState make_default_workspace(const std::filesystem::path& roo
       TabPersistentState{"Review", TabRole::Review, review_layout(), PaneKind::Git},
       TabPersistentState{"Finance", TabRole::Finance, finance_layout(), PaneKind::Markets},
       TabPersistentState{"Notes", TabRole::Notes, scratch_layout(), PaneKind::Scratch},
-      TabPersistentState{"Math", TabRole::Math, math_layout(), PaneKind::MathInput},
       TabPersistentState{"News", TabRole::News, news_layout(), PaneKind::NewsFeed},
   };
   state.recent_commands = {"cmake --build build", "ctest --test-dir build", "git status --short"};

@@ -27,7 +27,6 @@ add_library(deck_core
 )
 
 target_include_directories(deck_core PUBLIC include)
-target_compile_definitions(deck_core PRIVATE DECK_MATH_WORKER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/scripts/deck_math_worker.py")
 target_link_libraries(deck_core
   PUBLIC
     ftxui::screen

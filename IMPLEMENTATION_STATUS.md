@@ -52,8 +52,6 @@ Last updated: 2026-07-17
 - Pane focus is now visible; Tab/Shift-Tab cycle panes, Ctrl-W toggles maximize, and Alt-arrows resize the nearest matching split.
 - Ctrl-P provides a ranked mixed-source picker for actions, files, tabs, panes, recent commands, tasks, and safe project recipes.
 - User task history now persists the newest 50 records with 4 KiB redacted output tails and session-only sensitive argv.
-- A dedicated Math tab evaluates restricted SymPy expressions, retains 100 results, and renders 160-sample Braille plots when an isolated Python/SymPy environment is available.
-- The Math Input pane now includes quick determinant, inverse, simplification, calculus, and plotting examples.
 - A manual-refresh News tab provides cached AI, AI research, and Web3 security headlines from the public Hacker News Algolia endpoint.
 - News Preview renders Hacker News text posts immediately and can fetch a bounded, session-cached readable excerpt for a selected public HTTPS article.
 

@@ -102,12 +102,6 @@ std::string to_string(PaneKind value) {
       return "scratch";
     case PaneKind::Diff:
       return "diff";
-    case PaneKind::MathInput:
-      return "math-input";
-    case PaneKind::MathResult:
-      return "math-result";
-    case PaneKind::MathPlot:
-      return "math-plot";
     case PaneKind::NewsTopics:
       return "news-topics";
     case PaneKind::NewsFeed:
@@ -130,8 +124,6 @@ std::string to_string(TabRole value) {
       return "finance";
     case TabRole::Notes:
       return "notes";
-    case TabRole::Math:
-      return "math";
     case TabRole::News:
       return "news";
   }
@@ -179,9 +171,6 @@ std::optional<PaneKind> parse_pane_kind(const std::string& value) {
                                {"notes", PaneKind::Notes},
                                {"scratch", PaneKind::Scratch},
                                {"diff", PaneKind::Diff},
-                               {"math-input", PaneKind::MathInput},
-                               {"math-result", PaneKind::MathResult},
-                               {"math-plot", PaneKind::MathPlot},
                                {"news-topics", PaneKind::NewsTopics},
                                {"news-feed", PaneKind::NewsFeed},
                                {"news-preview", PaneKind::NewsPreview}});
@@ -194,7 +183,6 @@ std::optional<TabRole> parse_tab_role(const std::string& value) {
                               {"run", TabRole::Run},
                               {"finance", TabRole::Finance},
                               {"notes", TabRole::Notes},
-                              {"math", TabRole::Math},
                               {"news", TabRole::News}});
 }
 

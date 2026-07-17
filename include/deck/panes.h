@@ -23,9 +23,6 @@ struct PaneDataSnapshot {
   std::vector<std::string> notes_lines;
   std::vector<std::string> scratch_lines;
   std::vector<std::string> diff_lines;
-  std::vector<std::string> math_input_lines;
-  std::vector<std::string> math_result_lines;
-  std::vector<std::string> math_plot_lines;
   std::vector<std::string> news_topics_lines;
   std::vector<std::string> news_feed_lines;
   std::vector<std::string> news_preview_lines;

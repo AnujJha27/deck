@@ -19,9 +19,6 @@ struct EnvironmentCapabilities {
   bool kitty_graphics = false;
   bool truecolor = false;
   bool is_wsl = false;
-  bool python = false;
-  bool sympy = false;
-  std::string python_command;
   std::string url_opener;
   bool inside_tmux = false;
   bool finnhub_api_key = false;

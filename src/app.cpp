@@ -1242,7 +1242,6 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
       "branch-new <name>",
       "editor <vim|nvim|vscode>",
       "clear-tasks",
-      "calc <expression>",
       "cancel",
       "quit",
   };
@@ -1265,8 +1264,6 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
     suggestions.push_back("next-task");
     suggestions.push_back("prev-task");
     suggestions.push_back("rerun-task");
-  } else if (role == TabRole::Math) {
-    suggestions.push_back("plot-range <min> <max>");
   } else if (role == TabRole::News) {
     suggestions.push_back("refresh-news");
   } else {
@@ -1287,47 +1284,10 @@ std::string controls_for_role(TabRole role) {
       return "j/k ticker   Enter focus   a add   d remove   A alert   x refresh";
     case TabRole::Notes:
       return "E context note   e scratchpad   Ctrl+S save   Ctrl+R reload   Esc stop editing";
-    case TabRole::Math:
-      return ":calc expression   p plot   n append result to note   :plot-range min max";
     case TabRole::News:
       return "[/] topic   j/k headline   v preview text   Enter open   x refresh";
   }
   return {};
-}
-
-std::vector<std::string> run_math_worker(const WorkspacePersistentState& state,
-                                         const EnvironmentCapabilities& caps,
-                                         const std::string& action,
-                                         const std::string& expression,
-                                         double minimum,
-                                         double maximum) {
-  if (!caps.python || !caps.sympy) {
-    return {"error", "Python with SymPy is unavailable; see deck doctor"};
-  }
-  ProcessRequest request;
-  request.argv = {caps.python_command,
-                  "-E",
-                  "-s",
-                  "-P",
-                  std::filesystem::absolute(DECK_MATH_WORKER_PATH).string()};
-  request.cwd = state.root;
-  request.timeout = std::chrono::milliseconds(10000);
-  std::ostringstream input;
-  input << action << '\0' << expression << '\0' << minimum << '\0' << maximum;
-  request.stdin_text = input.str();
-  const auto result = ProcessRunner{}.run(request);
-  if (result.timed_out) return {"error", "Math worker startup timed out"};
-  if (result.exit_code != 0) return {"error", clip_text(result.stderr_text, 4096)};
-  std::vector<std::string> fields;
-  std::size_t cursor = 0;
-  while (cursor <= result.stdout_text.size()) {
-    const auto next = result.stdout_text.find('\0', cursor);
-    fields.push_back(result.stdout_text.substr(cursor, next - cursor));
-    if (fields.back().size() > 4096) fields.back().resize(4096);
-    if (next == std::string::npos) break;
-    cursor = next + 1;
-  }
-  return fields;
 }
 
 void launch_task(ScreenInteractive& screen,
@@ -1643,60 +1603,6 @@ bool execute_palette_command(ScreenInteractive& screen,
   }();
 
   const auto command = argv.front();
-  if (command == "calc") {
-    const auto expression_at = command_text.find_first_not_of(" \t", command.size());
-    if (expression_at == std::string::npos) {
-      set_status(controller, "Usage: calc <expression>");
-      screen.PostEvent(ftxui::Event::Custom);
-      return true;
-    }
-    const auto expression = command_text.substr(expression_at);
-    double minimum = -10.0;
-    double maximum = 10.0;
-    {
-      std::lock_guard<std::mutex> lock(controller.mutex);
-      minimum = controller.runtime.math_plot_min;
-      maximum = controller.runtime.math_plot_max;
-    }
-    const auto fields = run_math_worker(state, caps, "calc", expression, minimum, maximum);
-    std::vector<std::pair<std::string, std::string>> history;
-    {
-      std::lock_guard<std::mutex> lock(controller.mutex);
-      if (fields.size() >= 2 && fields[0] == "ok") {
-        controller.runtime.math_expression = expression;
-        controller.runtime.math_result = fields.size() >= 3 ? fields[2] : fields[1];
-        controller.runtime.math_history.push_back({expression, fields[1]});
-        if (controller.runtime.math_history.size() > 100) controller.runtime.math_history.erase(controller.runtime.math_history.begin());
-        controller.runtime.status_message = "Math result ready";
-        history = controller.runtime.math_history;
-      } else {
-        controller.runtime.status_message = fields.size() >= 2 ? fields[1] : "Math worker returned invalid output";
-      }
-    }
-    if (!history.empty()) WorkspaceStore{}.save_math_history(state.root, history);
-    invalidate_pane_data_snapshot(state.root);
-    screen.PostEvent(ftxui::Event::Custom);
-    return true;
-  }
-  if (command == "plot-range") {
-    if (argv.size() != 3) {
-      set_status(controller, "Usage: plot-range <min> <max>");
-    } else {
-      try {
-        const auto minimum = std::stod(argv[1]);
-        const auto maximum = std::stod(argv[2]);
-        if (minimum >= maximum) throw std::invalid_argument("range");
-        std::lock_guard<std::mutex> lock(controller.mutex);
-        controller.runtime.math_plot_min = minimum;
-        controller.runtime.math_plot_max = maximum;
-        controller.runtime.status_message = "Math plot range updated";
-      } catch (...) {
-        set_status(controller, "Plot range must be two numbers with min < max");
-      }
-    }
-    screen.PostEvent(ftxui::Event::Custom);
-    return true;
-  }
   if (command == "clear-tasks") {
     WorkspaceStore store;
     if (store.clear_tasks(state.root)) {
@@ -2502,55 +2408,9 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
         return true;
       }
     }
-    if (!text_input_active && event == ftxui::Event::Character('p') &&
-        state.tabs[controller.runtime.visible_tab].role == TabRole::Math) {
-      std::string expression;
-      double minimum = -10.0;
-      double maximum = 10.0;
-      {
-        std::lock_guard<std::mutex> lock(controller.mutex);
-        expression = controller.runtime.math_expression;
-        minimum = controller.runtime.math_plot_min;
-        maximum = controller.runtime.math_plot_max;
-      }
-      if (expression.empty()) {
-        set_status(controller, "Evaluate an expression before plotting");
-      } else {
-        const auto fields = run_math_worker(state, caps, "plot", expression, minimum, maximum);
-        std::lock_guard<std::mutex> lock(controller.mutex);
-        if (fields.size() >= 2 && fields[0] == "ok") {
-          controller.runtime.math_plot = fields[1];
-          controller.runtime.status_message = "Braille plot ready";
-        } else {
-          controller.runtime.status_message = fields.size() >= 2 ? fields[1] : "Plot failed";
-        }
-      }
-      invalidate_pane_data_snapshot(state.root);
-      screen.PostEvent(ftxui::Event::Custom);
-      return true;
-    }
     if (!text_input_active && event == ftxui::Event::Character('v') &&
         state.tabs[controller.runtime.visible_tab].role == TabRole::News) {
       request_news_article_preview(screen, controller, state, caps);
-      return true;
-    }
-    if (!text_input_active && event == ftxui::Event::Character('n') &&
-        state.tabs[controller.runtime.visible_tab].role == TabRole::Math) {
-      std::lock_guard<std::mutex> lock(controller.mutex);
-      if (controller.runtime.math_result.empty()) {
-        controller.runtime.status_message = "No math result to append";
-      } else if (controller.runtime.note_context.kind == NoteContextKind::None) {
-        controller.runtime.status_message = "Select a file, search result, or market note first";
-      } else {
-        if (!controller.runtime.note_editor.buffer.empty()) controller.runtime.note_editor.buffer += "\n\n";
-        controller.runtime.note_editor.buffer += "Math: `" + controller.runtime.math_expression + "`\n\n" +
-                                                 controller.runtime.math_result;
-        controller.runtime.note_editor.cursor = controller.runtime.note_editor.buffer.size();
-        controller.runtime.note_editor.dirty = true;
-        controller.runtime.status_message = "Math result appended to active note";
-      }
-      invalidate_pane_data_snapshot(state.root);
-      screen.PostEvent(ftxui::Event::Custom);
       return true;
     }
     if (!text_input_active && event == ftxui::Event::Character('r')) {
@@ -3631,11 +3491,6 @@ int run_app(const CliOptions& options) {
   if (!options.safe_mode) {
     runtime.task_history = store.load_tasks(root);
     runtime.selected_task_index = runtime.task_history.empty() ? 0 : runtime.task_history.size() - 1;
-    runtime.math_history = store.load_math_history(root);
-    if (!runtime.math_history.empty()) {
-      runtime.math_expression = runtime.math_history.back().first;
-      runtime.math_result = runtime.math_history.back().second;
-    }
   }
 
   if (options.safe_mode) {

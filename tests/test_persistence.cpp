@@ -50,19 +50,3 @@ DECK_TEST(task_history_redacts_and_omits_sensitive_argv) {
   DECK_ASSERT(store.load_tasks(root).empty());
   std::filesystem::remove_all(root);
 }
-
-DECK_TEST(math_history_keeps_latest_hundred_entries) {
-  const auto root = std::filesystem::temp_directory_path() / "deck-math-history-test";
-  std::filesystem::remove_all(root);
-  std::vector<std::pair<std::string, std::string>> history;
-  for (int i = 0; i < 105; ++i) {
-    history.push_back({"x+" + std::to_string(i), std::to_string(i)});
-  }
-  deck::WorkspaceStore store;
-  DECK_ASSERT(store.save_math_history(root, history));
-  const auto loaded = store.load_math_history(root);
-  DECK_ASSERT(loaded.size() == 100);
-  DECK_ASSERT(loaded.front().first == "x+5");
-  DECK_ASSERT(loaded.back().first == "x+104");
-  std::filesystem::remove_all(root);
-}

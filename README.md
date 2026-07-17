@@ -177,17 +177,6 @@ Notes controls:
 
 The Notes tab contains the workspace Scratch pane. Existing saved workspaces are upgraded to include it automatically on the next launch.
 
-Math controls:
-
-- `:calc <expression>` evaluate algebra, calculus, and matrix expressions with SymPy
-- `p` plot the last expression using terminal Braille cells (first free symbol, `[-10, 10]` by default)
-- `:plot-range <min> <max>` change the plot domain
-- `n` append the current result to the active context note
-
-The Input pane includes ready-to-type examples for determinants, matrix inverses, simplification, derivatives, definite integrals, and plots. The intended use is quick symbolic or numeric scratch work; use a notebook when you need a longer derivation.
-
-The Math tab is added to existing workspaces automatically. It prefers `.venv/bin/python`, then `venv/bin/python`, then `python3`; SymPy is optional and is never installed automatically. `deck doctor` reports both dependencies. Math input is sent to a hardened, fixed-argv worker with Python environment/user-path/script-path loading disabled, a two-second timeout, and a restricted expression namespace.
-
 News controls:
 
 - `x` manually fetch recent headlines
@@ -210,7 +199,7 @@ The Files pane shows a short text preview for the selected file. Binary files an
 - `.deck/scratch.md`: scratchpad
 - `.deck/notes/`: context-linked notes
 
-The SQLite state also retains the newest 50 user task records (with redacted 4 KiB output tails) and newest 100 math results. Probe tasks are not persisted, and commands whose argv appears sensitive remain session-only.
+The SQLite state also retains the newest 50 user task records with redacted 4 KiB output tails. Probe tasks are not persisted, and commands whose argv appears sensitive remain session-only.
 
 ## Project docs
 

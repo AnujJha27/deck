@@ -21,9 +21,6 @@ enum class PaneKind {
   Notes,
   Scratch,
   Diff,
-  MathInput,
-  MathResult,
-  MathPlot,
   NewsTopics,
   NewsFeed,
   NewsPreview,
@@ -35,7 +32,6 @@ enum class TabRole {
   Run,
   Finance,
   Notes,
-  Math,
   News,
 };
 

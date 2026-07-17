@@ -229,12 +229,6 @@ struct WorkspaceRuntimeState {
   bool overlays_enabled = true;
   std::size_t visible_tab = 0;
   std::optional<PaneKind> maximized_pane;
-  std::string math_expression;
-  std::string math_result;
-  std::string math_plot;
-  std::vector<std::pair<std::string, std::string>> math_history;
-  double math_plot_min = -10.0;
-  double math_plot_max = 10.0;
   std::vector<NewsEntry> news_entries;
   std::size_t selected_news_index = 0;
   std::size_t selected_news_category = 0;

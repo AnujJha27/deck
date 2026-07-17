@@ -32,14 +32,12 @@ std::vector<std::pair<std::string, TestFn>>& registry();
 
 DECK_TEST(workspace_default_tabs) {
   auto state = deck::make_default_workspace("/tmp/deck");
-  DECK_ASSERT(state.tabs.size() == 7);
+  DECK_ASSERT(state.tabs.size() == 6);
   DECK_ASSERT(state.tabs[0].name == "Dev");
   DECK_ASSERT(deck::contains_pane(state.tabs[1].layout, deck::PaneKind::Tasks));
   DECK_ASSERT(state.tabs[3].role == deck::TabRole::Finance);
   DECK_ASSERT(state.tabs[4].role == deck::TabRole::Notes);
-  DECK_ASSERT(state.tabs[5].role == deck::TabRole::Math);
-  DECK_ASSERT(deck::contains_pane(state.tabs[5].layout, deck::PaneKind::MathPlot));
-  DECK_ASSERT(state.tabs[6].role == deck::TabRole::News);
+  DECK_ASSERT(state.tabs[5].role == deck::TabRole::News);
 }
 
 DECK_TEST(workspace_round_trip) {
@@ -66,7 +64,7 @@ DECK_TEST(workspace_tab_upgrade_adds_missing_notes_tab) {
   auto state = deck::make_default_workspace("/tmp/deck");
   state.tabs.erase(state.tabs.begin() + 4);
   deck::ensure_workspace_tabs(state);
-  DECK_ASSERT(state.tabs.size() == 7);
+  DECK_ASSERT(state.tabs.size() == 6);
   const auto notes = std::find_if(state.tabs.begin(), state.tabs.end(), [](const auto& tab) {
     return tab.role == deck::TabRole::Notes;
   });
@@ -74,20 +72,11 @@ DECK_TEST(workspace_tab_upgrade_adds_missing_notes_tab) {
   DECK_ASSERT(deck::contains_pane(notes->layout, deck::PaneKind::Scratch));
 }
 
-DECK_TEST(workspace_tab_upgrade_adds_missing_math_tab) {
-  auto state = deck::make_default_workspace("/tmp/deck");
-  state.tabs.erase(state.tabs.begin() + 5);
-  deck::ensure_workspace_tabs(state);
-  DECK_ASSERT(state.tabs.size() == 7);
-  DECK_ASSERT(state.tabs.back().role == deck::TabRole::Math);
-  DECK_ASSERT(deck::contains_pane(state.tabs.back().layout, deck::PaneKind::MathResult));
-}
-
 DECK_TEST(workspace_tab_upgrade_adds_missing_news_tab) {
   auto state = deck::make_default_workspace("/tmp/deck");
   state.tabs.pop_back();
   deck::ensure_workspace_tabs(state);
-  DECK_ASSERT(state.tabs.size() == 7);
+  DECK_ASSERT(state.tabs.size() == 6);
   DECK_ASSERT(state.tabs.back().role == deck::TabRole::News);
   DECK_ASSERT(deck::contains_pane(state.tabs.back().layout, deck::PaneKind::NewsFeed));
 }

@@ -820,11 +820,7 @@ Color pane_accent(PaneKind kind) {
       return Color::Green;
     case PaneKind::Notes:
     case PaneKind::Scratch:
-    case PaneKind::MathInput:
-    case PaneKind::MathResult:
       return Color::Cyan;
-    case PaneKind::MathPlot:
-      return Color::Green;
     case PaneKind::NewsTopics:
     case PaneKind::NewsFeed:
       return Color::Cyan;
@@ -988,12 +984,6 @@ std::vector<std::string> lines_for_pane(PaneKind kind, const PaneDataSnapshot& s
       return snapshot.scratch_lines;
     case PaneKind::Diff:
       return snapshot.diff_lines;
-    case PaneKind::MathInput:
-      return snapshot.math_input_lines;
-    case PaneKind::MathResult:
-      return snapshot.math_result_lines;
-    case PaneKind::MathPlot:
-      return snapshot.math_plot_lines;
     case PaneKind::NewsTopics:
       return snapshot.news_topics_lines;
     case PaneKind::NewsFeed:
@@ -1016,10 +1006,6 @@ PaneStatus status_for_pane(PaneKind kind, const EnvironmentCapabilities& caps) {
       return PaneStatus::Ready;
     case PaneKind::Scratch:
       return PaneStatus::Ready;
-    case PaneKind::MathInput:
-    case PaneKind::MathResult:
-    case PaneKind::MathPlot:
-      return PaneStatus::Ready;
     case PaneKind::NewsTopics:
     case PaneKind::NewsFeed:
     case PaneKind::NewsPreview:
@@ -1034,29 +1020,6 @@ PaneStatus status_for_pane(PaneKind kind, const EnvironmentCapabilities& caps) {
 PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
                                           const WorkspaceRuntimeState& runtime,
                                           const EnvironmentCapabilities& caps) {
-  const auto fill_math = [&](PaneDataSnapshot& snapshot) {
-    snapshot.math_input_lines = {
-        ":calc <expression> evaluate", "p plot last expression", "n append result to note",
-        "Quick examples:",
-        "  det(Matrix([[1,2],[3,4]]))",
-        "  Matrix([[1,2],[3,4]])**-1",
-        "  simplify((x^2-1)/(x-1))",
-        "  diff(sin(x)*exp(x), x)",
-        "  integrate(x^2, (x, 0, 1))",
-    };
-    if (!runtime.math_expression.empty()) {
-      snapshot.math_input_lines.push_back("input: " + runtime.math_expression);
-    }
-    snapshot.math_input_lines.push_back("history: " + std::to_string(runtime.math_history.size()));
-    const auto begin = runtime.math_history.size() > 5 ? runtime.math_history.size() - 5 : 0;
-    for (std::size_t i = begin; i < runtime.math_history.size(); ++i) {
-      snapshot.math_input_lines.push_back("  " + runtime.math_history[i].first + " = " + runtime.math_history[i].second);
-    }
-    std::istringstream result(runtime.math_result.empty() ? "No result yet" : runtime.math_result);
-    for (std::string line; std::getline(result, line);) snapshot.math_result_lines.push_back(line);
-    std::istringstream plot(runtime.math_plot.empty() ? "Press p after evaluating an expression" : runtime.math_plot);
-    for (std::string line; std::getline(plot, line);) snapshot.math_plot_lines.push_back(line);
-  };
   const auto fill_news = [&](PaneDataSnapshot& snapshot) {
     static const std::vector<std::string> categories = {"AI World", "AI Research", "Web3 Security"};
     snapshot.news_topics_lines = {"[/] change topic", "x refresh manually", "No key or paid API"};
@@ -1179,7 +1142,6 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       if (!runtime.status_message.empty()) {
         snapshot.logs_lines.push_back("status: " + runtime.status_message);
       }
-      fill_math(snapshot);
       fill_news(snapshot);
       return snapshot;
     }
@@ -1259,7 +1221,6 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
   if (!runtime.status_message.empty()) {
     snapshot.logs_lines.push_back("status: " + runtime.status_message);
   }
-  fill_math(snapshot);
   fill_news(snapshot);
 
   {

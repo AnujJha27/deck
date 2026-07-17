@@ -55,12 +55,6 @@ Last updated: 2026-07-17
 - [x] Add keyboard pane focus, maximize, and split resizing.
 - [x] Add a fuzzy mixed-source quick picker with project recipes.
 
-## Math workspace
-
-- [x] Add a dedicated algebra/calculus/matrix tab with Unicode results.
-- [x] Use an optional isolated SymPy worker without automatic installation.
-- [x] Add bounded result history and terminal Braille plots.
-
 ## News workspace
 
 - [x] Add a manual-refresh, no-key headline feed for AI and Web3 security.
