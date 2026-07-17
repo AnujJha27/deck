@@ -91,3 +91,18 @@ DECK_TEST(workspace_tab_upgrade_adds_missing_news_tab) {
   DECK_ASSERT(state.tabs.back().role == deck::TabRole::News);
   DECK_ASSERT(deck::contains_pane(state.tabs.back().layout, deck::PaneKind::NewsFeed));
 }
+
+DECK_TEST(workspace_upgrades_untouched_news_preview_ratio) {
+  auto state = deck::make_default_workspace("/tmp/deck");
+  auto& news = state.tabs.back();
+  news.layout = deck::make_split(
+      deck::SplitAxis::Horizontal,
+      0.22,
+      deck::make_leaf(deck::PaneKind::NewsTopics),
+      deck::make_split(deck::SplitAxis::Vertical,
+                       0.62,
+                       deck::make_leaf(deck::PaneKind::NewsFeed),
+                       deck::make_leaf(deck::PaneKind::NewsPreview)));
+  deck::ensure_workspace_tabs(state);
+  DECK_ASSERT(deck::serialize_split_tree(news.layout).find("vertical,0.5") != std::string::npos);
+}

@@ -15,6 +15,7 @@ add_library(deck_core
   src/cli.cpp
   src/environment.cpp
   src/event_bus.cpp
+  src/finance.cpp
   src/news.cpp
   src/persistence.cpp
   src/picker.cpp

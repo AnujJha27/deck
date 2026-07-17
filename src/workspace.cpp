@@ -57,15 +57,17 @@ SplitNode math_layout() {
                                make_leaf(PaneKind::MathPlot)));
 }
 
-SplitNode news_layout() {
+SplitNode news_layout_with_feed_ratio(double feed_ratio) {
   return make_split(SplitAxis::Horizontal,
                     0.22,
                     make_leaf(PaneKind::NewsTopics),
                     make_split(SplitAxis::Vertical,
-                               0.62,
+                               feed_ratio,
                                make_leaf(PaneKind::NewsFeed),
                                make_leaf(PaneKind::NewsPreview)));
 }
+
+SplitNode news_layout() { return news_layout_with_feed_ratio(0.50); }
 
 std::string escape(std::string value) {
   for (char& ch : value) {
@@ -107,6 +109,12 @@ void ensure_workspace_tabs(WorkspacePersistentState& state) {
     });
     if (!exists) {
       state.tabs.push_back(default_tab);
+    }
+  }
+  const auto old_news_layout = serialize_split_tree(news_layout_with_feed_ratio(0.62));
+  for (auto& tab : state.tabs) {
+    if (tab.role == TabRole::News && serialize_split_tree(tab.layout) == old_news_layout) {
+      tab.layout = news_layout();
     }
   }
   if (state.focused_tab >= state.tabs.size()) {
