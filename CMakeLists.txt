@@ -16,6 +16,7 @@ add_library(deck_core
   src/environment.cpp
   src/event_bus.cpp
   src/persistence.cpp
+  src/picker.cpp
   src/panes.cpp
   src/process.cpp
   src/split_tree.cpp
@@ -45,6 +46,7 @@ if(BUILD_TESTING)
     tests/test_event_bus.cpp
     tests/test_panes.cpp
     tests/test_paper_anchor.cpp
+    tests/test_picker.cpp
   )
   target_link_libraries(deck_tests PRIVATE deck_core)
   add_test(NAME deck_tests COMMAND deck_tests)

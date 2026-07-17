@@ -4,6 +4,7 @@
 #include "deck/event_bus.h"
 #include "deck/panes.h"
 #include "deck/persistence.h"
+#include "deck/picker.h"
 #include "deck/process.h"
 #include "deck/split_tree.h"
 #include "deck/workspace.h"
@@ -445,6 +446,23 @@ struct CommitOverlayState {
 struct SettingsOverlayState {
   bool active = false;
   int selected_editor = 1;
+};
+
+enum class PickerEntryKind { Action, File, Tab, Pane, RecentCommand, Task, Recipe };
+
+struct PickerEntry {
+  PickerEntryKind kind = PickerEntryKind::Action;
+  std::string label;
+  std::vector<std::string> argv;
+  std::size_t tab_index = 0;
+  std::optional<PaneKind> pane;
+  std::string value;
+};
+
+struct PickerOverlayState {
+  bool active = false;
+  std::string query;
+  std::size_t selected = 0;
 };
 
 void set_status(ShellTaskController& controller, const std::string& message);
@@ -2692,6 +2710,7 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
   CommandOverlayState command_overlay;
   CommitOverlayState commit_overlay;
   SettingsOverlayState settings_overlay;
+  PickerOverlayState picker_overlay;
   // Runtime-backed pane lines are rebuilt from the cached scan on each render. UI-only
   // edits therefore only need a redraw; dropping the cache here made every keystroke
   // rescan the workspace.
@@ -2703,6 +2722,81 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
   for (const auto& tab : state.tabs) {
     tab_names.push_back(tab.name);
   }
+  std::vector<std::string> picker_files;
+  {
+    std::error_code ec;
+    for (std::filesystem::recursive_directory_iterator it(
+             state.root, std::filesystem::directory_options::skip_permission_denied, ec), end;
+         it != end && picker_files.size() < 600; it.increment(ec)) {
+      if (ec) {
+        ec.clear();
+        continue;
+      }
+      const auto relative = it->path().lexically_relative(state.root);
+      if (it->is_directory(ec) &&
+          (relative.string().starts_with(".git") || relative.string().starts_with("build"))) {
+        it.disable_recursion_pending();
+        continue;
+      }
+      if (it->is_regular_file(ec)) {
+        picker_files.push_back(relative.string());
+      }
+    }
+  }
+  const auto picker_entries = [&] {
+    std::vector<TaskRecord> tasks;
+    std::size_t visible_tab = 0;
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      tasks = controller.runtime.task_history;
+      visible_tab = controller.runtime.visible_tab;
+    }
+    std::vector<PickerEntry> entries;
+    for (const auto& command : palette_suggestions_for(
+             state.tabs[visible_tab].role)) {
+      const auto action = command.substr(0, command.find(' '));
+      entries.push_back({PickerEntryKind::Action, "Action  " + command, {}, 0, std::nullopt, action});
+    }
+    for (const auto& file : picker_files) {
+      entries.push_back({PickerEntryKind::File, "File    " + file, {}, 0, std::nullopt, file});
+    }
+    for (std::size_t i = 0; i < state.tabs.size(); ++i) {
+      entries.push_back({PickerEntryKind::Tab, "Tab     " + state.tabs[i].name, {}, i});
+      for (const auto pane : pane_order(state.tabs[i].layout)) {
+        entries.push_back(
+            {PickerEntryKind::Pane, "Pane    " + state.tabs[i].name + " / " + to_string(pane), {}, i, pane});
+      }
+    }
+    for (const auto& command : state.recent_commands) {
+      entries.push_back({PickerEntryKind::RecentCommand,
+                         "Recent  " + command,
+                         split_command_line(command)});
+    }
+    for (auto it = tasks.rbegin(); it != tasks.rend(); ++it) {
+      if (!it->argv.empty()) {
+        entries.push_back({PickerEntryKind::Task, "Task    " + it->name, it->argv});
+      }
+    }
+    for (const auto& recipe : discover_project_recipes(state.root)) {
+      entries.push_back({PickerEntryKind::Recipe, "Recipe  " + recipe.label, recipe.argv});
+    }
+    struct Ranked { int score; std::size_t order; PickerEntry entry; };
+    std::vector<Ranked> ranked;
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+      const auto score = fuzzy_score(picker_overlay.query, entries[i].label);
+      if (score >= 0) {
+        ranked.push_back({score - static_cast<int>(i / 8), i, std::move(entries[i])});
+      }
+    }
+    std::stable_sort(ranked.begin(), ranked.end(), [](const auto& left, const auto& right) {
+      return left.score > right.score;
+    });
+    entries.clear();
+    for (std::size_t i = 0; i < std::min<std::size_t>(12, ranked.size()); ++i) {
+      entries.push_back(std::move(ranked[i].entry));
+    }
+    return entries;
+  };
 
   auto tabs = Toggle(&tab_names, &tab_index);
   auto header = Renderer([&] {
@@ -2859,6 +2953,22 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
           overlay | center,
       });
     }
+    if (picker_overlay.active) {
+      const auto matches = picker_entries();
+      Elements rows;
+      for (std::size_t i = 0; i < matches.size(); ++i) {
+        auto row = text((i == picker_overlay.selected ? "◆ " : "  ") + matches[i].label);
+        rows.push_back(i == picker_overlay.selected ? row | color(Color::Cyan) | bold : row | dim);
+      }
+      if (rows.empty()) {
+        rows.push_back(text("  No matches") | dim);
+      }
+      auto overlay = window(
+          text("Quick open  Ctrl-P"),
+          vbox({text(picker_overlay.query.empty() ? std::string("Type to filter") : picker_overlay.query),
+                separator(), vbox(std::move(rows))}));
+      content = dbox({content, overlay | center});
+    }
     if (commit_overlay.active) {
       auto overlay = window(
           text("Commit changes"),
@@ -2914,7 +3024,13 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     }
     const bool text_input_active = editor_active || search_overlay.active || ticker_overlay.active ||
                                    alert_overlay.active || command_overlay.active || commit_overlay.active ||
-                                   settings_overlay.active;
+                                   settings_overlay.active || picker_overlay.active;
+    if (!text_input_active && event == ftxui::Event::CtrlP) {
+      picker_overlay.active = true;
+      picker_overlay.query.clear();
+      picker_overlay.selected = 0;
+      return true;
+    }
     if (!text_input_active && (event == ftxui::Event::Tab || event == ftxui::Event::TabReverse)) {
       std::lock_guard<std::mutex> lock(controller.mutex);
       auto& tab = state.tabs[controller.runtime.visible_tab];
@@ -3080,6 +3196,65 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
         alert_overlay.rule += event.character();
         return true;
       }
+    }
+    if (picker_overlay.active) {
+      auto matches = picker_entries();
+      if (event == ftxui::Event::Escape || event == ftxui::Event::CtrlP) {
+        picker_overlay.active = false;
+        return true;
+      }
+      if (event == ftxui::Event::ArrowDown || event == ftxui::Event::CtrlJ) {
+        if (!matches.empty()) {
+          picker_overlay.selected = std::min(picker_overlay.selected + 1, matches.size() - 1);
+        }
+        return true;
+      }
+      if (event == ftxui::Event::ArrowUp || event == ftxui::Event::CtrlK) {
+        if (picker_overlay.selected > 0) {
+          --picker_overlay.selected;
+        }
+        return true;
+      }
+      if (event == ftxui::Event::Backspace) {
+        if (!picker_overlay.query.empty()) {
+          picker_overlay.query.pop_back();
+          picker_overlay.selected = 0;
+        }
+        return true;
+      }
+      if (event.is_character()) {
+        picker_overlay.query += event.character();
+        picker_overlay.selected = 0;
+        return true;
+      }
+      if (event == ftxui::Event::Return && !matches.empty()) {
+        const auto selected = matches[std::min(picker_overlay.selected, matches.size() - 1)];
+        picker_overlay.active = false;
+        if (selected.kind == PickerEntryKind::Tab || selected.kind == PickerEntryKind::Pane) {
+          tab_index = static_cast<int>(selected.tab_index);
+          std::lock_guard<std::mutex> lock(controller.mutex);
+          controller.runtime.visible_tab = selected.tab_index;
+          state.focused_tab = selected.tab_index;
+          if (selected.pane) {
+            state.tabs[selected.tab_index].focused_pane = *selected.pane;
+          }
+          controller.runtime.status_message = "Opened " + selected.label;
+          return true;
+        }
+        if (selected.kind == PickerEntryKind::File) {
+          const SearchResult result{selected.value, 1, 1, {}};
+          if (!open_in_configured_editor(screen, state, caps, result)) {
+            set_status(controller, editor_display_name(state.external_editor) + " is not available on PATH");
+          }
+          return true;
+        }
+        if (selected.kind == PickerEntryKind::Action) {
+          return execute_palette_command(screen, controller, state, caps, selected.value);
+        }
+        launch_task(screen, controller, state, selected.label, selected.argv, true, caps);
+        return true;
+      }
+      return true;
     }
     if (command_overlay.active) {
       if (event == ftxui::Event::Escape) {
