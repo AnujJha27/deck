@@ -190,3 +190,18 @@ DECK_TEST(news_preview_scrolls_through_long_article_text) {
 
   deck::invalidate_pane_data_snapshot(root);
 }
+
+DECK_TEST(note_snapshots_keep_lines_available_for_pane_scrolling) {
+  const auto root = std::filesystem::temp_directory_path() / "deck_note_scroll_test";
+  auto state = deck::make_default_workspace(root);
+  deck::WorkspaceRuntimeState runtime;
+  for (int i = 0; i < 40; ++i) runtime.scratch_editor.buffer += "scratch line " + std::to_string(i) + "\n";
+
+  const auto snapshot = deck::build_pane_data_snapshot(state, runtime, {});
+  DECK_ASSERT(snapshot.scratch_lines.size() > 40);
+  DECK_ASSERT(std::any_of(snapshot.scratch_lines.begin(), snapshot.scratch_lines.end(), [](const std::string& line) {
+    return line.find("scratch line 39") != std::string::npos;
+  }));
+
+  deck::invalidate_pane_data_snapshot(root);
+}

@@ -1084,9 +1084,9 @@ std::string controls_for_role(TabRole role) {
     case TabRole::Finance:
       return "j/k ticker   Enter focus   a add   d remove   A alert   x refresh";
     case TabRole::Notes:
-      return "E context note   e scratchpad   Ctrl+S save   Ctrl+R reload   Esc stop editing";
+      return "E context note   e scratchpad   PgUp/PgDn focused pane   Ctrl+S save   Esc stop editing";
     case TabRole::News:
-      return "[/] topic   j/k headline   v preview text   Enter open   x refresh";
+      return "[/] topic   j/k headline   v preview/focus   PgUp/PgDn focused pane   Enter open";
   }
   return {};
 }
@@ -2211,22 +2211,26 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     }
     if (!text_input_active && event == ftxui::Event::Character('v') &&
         state.tabs[controller.runtime.visible_tab].role == TabRole::News) {
+      {
+        std::lock_guard<std::mutex> lock(controller.mutex);
+        state.tabs[controller.runtime.visible_tab].focused_pane = PaneKind::NewsPreview;
+      }
       request_news_article_preview(screen, controller, state, caps);
       return true;
     }
-    if (!text_input_active && (event == ftxui::Event::PageDown || event == ftxui::Event::PageUp) &&
-        state.tabs[controller.runtime.visible_tab].role == TabRole::News) {
+    if (!text_input_active && (event == ftxui::Event::PageDown || event == ftxui::Event::PageUp)) {
       std::lock_guard<std::mutex> lock(controller.mutex);
       constexpr std::size_t page_size = 10;
+      const auto focused = state.tabs[controller.runtime.visible_tab].focused_pane;
+      auto& offset = focused == PaneKind::NewsPreview
+                         ? controller.runtime.news_preview_scroll
+                         : controller.runtime.pane_scroll_offsets[focused];
       if (event == ftxui::Event::PageDown) {
-        controller.runtime.news_preview_scroll += page_size;
+        offset += page_size;
       } else {
-        controller.runtime.news_preview_scroll =
-            controller.runtime.news_preview_scroll > page_size
-                ? controller.runtime.news_preview_scroll - page_size
-                : 0;
+        offset = offset > page_size ? offset - page_size : 0;
       }
-      controller.runtime.status_message = "Article preview scrolled";
+      controller.runtime.status_message = "Scrolled " + to_string(focused);
       invalidate_pane_data_snapshot(state.root);
       screen.PostEvent(ftxui::Event::Custom);
       return true;

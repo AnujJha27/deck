@@ -229,6 +229,7 @@ struct WorkspaceRuntimeState {
   bool overlays_enabled = true;
   std::size_t visible_tab = 0;
   std::optional<PaneKind> maximized_pane;
+  std::unordered_map<PaneKind, std::size_t> pane_scroll_offsets;
   std::vector<NewsEntry> news_entries;
   std::size_t selected_news_index = 0;
   std::size_t selected_news_category = 0;

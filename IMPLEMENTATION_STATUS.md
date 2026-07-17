@@ -55,6 +55,7 @@ Last updated: 2026-07-17
 - A manual-refresh News tab provides cached AI, AI research, and Web3 security headlines from the public Hacker News Algolia endpoint.
 - News Preview renders Hacker News text posts immediately and can fetch a bounded, session-cached readable excerpt for a selected public HTTPS article.
 - Long News article previews can be paged in place with PageUp and PageDown.
+- PageUp and PageDown scroll the focused pane across long notes, scratchpads, diffs, logs, and previews.
 
 ## Partially implemented
 

@@ -700,7 +700,7 @@ std::vector<std::string> lines_for_notes(const WorkspacePersistentState& state,
   std::istringstream in(runtime.note_editor.buffer);
   std::string line;
   std::size_t current_index = 0;
-  while (std::getline(in, line) && lines.size() < 16) {
+  while (std::getline(in, line) && lines.size() < 250) {
     const bool cursor_here = runtime.note_editor.editing && runtime.note_editor.cursor >= current_index &&
                              runtime.note_editor.cursor <= current_index + line.size();
     if (cursor_here) {
@@ -715,7 +715,7 @@ std::vector<std::string> lines_for_notes(const WorkspacePersistentState& state,
   }
 
   if (runtime.note_editor.editing && runtime.note_editor.cursor == runtime.note_editor.buffer.size() &&
-      !runtime.note_editor.buffer.empty() && runtime.note_editor.buffer.back() == '\n' && lines.size() < 16) {
+      !runtime.note_editor.buffer.empty() && runtime.note_editor.buffer.back() == '\n' && lines.size() < 250) {
     lines.push_back("> |");
   }
   return lines;
@@ -737,7 +737,7 @@ std::vector<std::string> lines_for_scratch(const WorkspaceRuntimeState& runtime)
   std::istringstream in(editor.buffer);
   std::string line;
   std::size_t current_index = 0;
-  while (std::getline(in, line) && lines.size() < 16) {
+  while (std::getline(in, line) && lines.size() < 250) {
     const bool cursor_here = editor.editing && editor.cursor >= current_index &&
                              editor.cursor <= current_index + line.size();
     if (cursor_here) {
@@ -752,7 +752,7 @@ std::vector<std::string> lines_for_scratch(const WorkspaceRuntimeState& runtime)
   }
 
   if (editor.editing && editor.cursor == editor.buffer.size() && !editor.buffer.empty() &&
-      editor.buffer.back() == '\n' && lines.size() < 16) {
+      editor.buffer.back() == '\n' && lines.size() < 250) {
     lines.push_back("> |");
   }
   return lines;
@@ -767,7 +767,7 @@ std::vector<std::string> lines_for_diff(const WorkspacePersistentState& state,
   if (!runtime.git_entries.empty() && runtime.selected_git_index < runtime.git_entries.size()) {
     const auto& selected = runtime.git_entries[runtime.selected_git_index];
     const auto staged = selected.index_status != " " && selected.index_status != "?";
-    auto lines = split_lines(runtime.diff_preview_text, 18);
+    auto lines = split_lines(runtime.diff_preview_text, 250);
     if (!lines.empty()) {
       lines.insert(lines.begin(), "selected: " + selected.path);
       lines.insert(lines.begin() + 1, staged ? "view: staged diff" : "view: unstaged diff");
@@ -1264,11 +1264,21 @@ std::unique_ptr<Pane> make_static_pane(PaneKind kind,
                                        const WorkspacePersistentState& state,
                                        const WorkspaceRuntimeState& runtime,
                                        const EnvironmentCapabilities& caps) {
-  const auto title = kind == PaneKind::Portfolio ? std::string("Chart") : to_string(kind);
+  auto title = kind == PaneKind::Portfolio ? std::string("Chart") : to_string(kind);
   const bool focused = runtime.visible_tab < state.tabs.size() &&
                        state.tabs[runtime.visible_tab].focused_pane == kind;
+  auto lines = lines_for_pane(kind, snapshot);
+  if (kind != PaneKind::NewsPreview) {
+    const auto found = runtime.pane_scroll_offsets.find(kind);
+    const auto requested = found == runtime.pane_scroll_offsets.end() ? 0 : found->second;
+    const auto start = std::min(requested, lines.size() > 1 ? lines.size() - 1 : std::size_t{0});
+    if (start > 0) {
+      lines.erase(lines.begin(), lines.begin() + static_cast<std::ptrdiff_t>(start));
+      title += " · line " + std::to_string(start + 1);
+    }
+  }
   return std::make_unique<StaticPane>(
-      kind, title, lines_for_pane(kind, snapshot), status_for_pane(kind, caps), focused);
+      kind, title, std::move(lines), status_for_pane(kind, caps), focused);
 }
 
 }  // namespace deck
