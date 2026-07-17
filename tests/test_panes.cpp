@@ -168,3 +168,25 @@ DECK_TEST(finance_chart_renders_ohlc_candles) {
 
   deck::invalidate_pane_data_snapshot(root);
 }
+
+DECK_TEST(news_preview_scrolls_through_long_article_text) {
+  const auto root = std::filesystem::temp_directory_path() / "deck_news_scroll_test";
+  auto state = deck::make_default_workspace(root);
+  deck::WorkspaceRuntimeState runtime;
+  std::string article = "FIRST_MARKER ";
+  for (int i = 0; i < 120; ++i) article += "articleword ";
+  article += "LATER_MARKER";
+  runtime.news_entries = {{"AI World", "Long article", "https://example.com/story", "Example", "now", article}};
+  runtime.news_preview_scroll = 10;
+
+  const auto snapshot = deck::build_pane_data_snapshot(state, runtime, {});
+  const auto contains = [&](const std::string& needle) {
+    return std::any_of(snapshot.news_preview_lines.begin(), snapshot.news_preview_lines.end(),
+                       [&](const std::string& line) { return line.find(needle) != std::string::npos; });
+  };
+  DECK_ASSERT(!contains("FIRST_MARKER"));
+  DECK_ASSERT(contains("LATER_MARKER"));
+  DECK_ASSERT(contains("PgUp/PgDn scroll"));
+
+  deck::invalidate_pane_data_snapshot(root);
+}

@@ -1033,7 +1033,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
     }
     snapshot.news_feed_lines = {
         runtime.news_refresh_in_progress ? "status: refreshing" : "status: cached",
-        "j/k select  Enter open  x refresh",
+        "j/k select  Enter open  x refresh  PgUp/PgDn preview",
     };
     if (runtime.news_entries.empty()) snapshot.news_feed_lines.push_back("Press x to fetch recent headlines");
     for (std::size_t i = 0, shown = 0; i < runtime.news_entries.size() && shown < 9; ++i) {
@@ -1055,8 +1055,16 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       }
       if (!preview.empty()) {
         snapshot.news_preview_lines.push_back("Preview:");
-        auto lines = wrapped_lines(preview);
-        snapshot.news_preview_lines.insert(snapshot.news_preview_lines.end(), lines.begin(), lines.end());
+        const auto lines = wrapped_lines(preview, 72, 200);
+        const auto max_start = lines.size() > 1 ? lines.size() - 1 : 0;
+        const auto start = std::min(runtime.news_preview_scroll, max_start);
+        const auto end = std::min(start + std::size_t{14}, lines.size());
+        snapshot.news_preview_lines.push_back(
+            "lines " + std::to_string(lines.empty() ? 0 : start + 1) + "-" + std::to_string(end) +
+            " / " + std::to_string(lines.size()) + "  PgUp/PgDn scroll");
+        snapshot.news_preview_lines.insert(snapshot.news_preview_lines.end(),
+                                           lines.begin() + static_cast<std::ptrdiff_t>(start),
+                                           lines.begin() + static_cast<std::ptrdiff_t>(end));
       } else {
         snapshot.news_preview_lines.push_back("No Hacker News text; press v for a bounded external preview");
       }

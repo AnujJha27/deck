@@ -54,6 +54,7 @@ Last updated: 2026-07-17
 - User task history now persists the newest 50 records with 4 KiB redacted output tails and session-only sensitive argv.
 - A manual-refresh News tab provides cached AI, AI research, and Web3 security headlines from the public Hacker News Algolia endpoint.
 - News Preview renders Hacker News text posts immediately and can fetch a bounded, session-cached readable excerpt for a selected public HTTPS article.
+- Long News article previews can be paged in place with PageUp and PageDown.
 
 ## Partially implemented
 

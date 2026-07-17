@@ -232,6 +232,7 @@ struct WorkspaceRuntimeState {
   std::vector<NewsEntry> news_entries;
   std::size_t selected_news_index = 0;
   std::size_t selected_news_category = 0;
+  std::size_t news_preview_scroll = 0;
   bool news_refresh_in_progress = false;
   bool news_preview_in_progress = false;
   std::unordered_map<std::string, std::string> news_article_previews;

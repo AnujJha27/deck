@@ -803,6 +803,7 @@ void request_news_refresh(ScreenInteractive& screen,
       if (!entries.empty()) {
         controller.runtime.news_entries = std::move(entries);
         controller.runtime.selected_news_index = 0;
+        controller.runtime.news_preview_scroll = 0;
         controller.runtime.status_message = "News refreshed; cached until the next manual refresh";
       } else {
         controller.runtime.status_message = error.empty() ? "No matching news found" : error;
@@ -828,6 +829,7 @@ void select_news_category(WorkspaceRuntimeState& runtime, std::size_t category) 
   runtime.selected_news_index = found == runtime.news_entries.end()
                                     ? 0
                                     : static_cast<std::size_t>(found - runtime.news_entries.begin());
+  runtime.news_preview_scroll = 0;
 }
 
 void move_news_selection(WorkspaceRuntimeState& runtime, int direction) {
@@ -842,6 +844,7 @@ void move_news_selection(WorkspaceRuntimeState& runtime, int direction) {
   if (direction > 0) position = std::min(position + 1, matches.size() - 1);
   else if (position > 0) --position;
   runtime.selected_news_index = matches[position];
+  runtime.news_preview_scroll = 0;
 }
 
 void request_news_article_preview(ScreenInteractive& screen,
@@ -891,6 +894,7 @@ void request_news_article_preview(ScreenInteractive& screen,
       controller.runtime.news_preview_in_progress = false;
       if (!preview.empty()) {
         controller.runtime.news_article_previews[selected.url] = preview;
+        controller.runtime.news_preview_scroll = 0;
         controller.runtime.status_message = "Article preview cached for this session";
       } else {
         controller.runtime.status_message = result.stderr_text.empty()
@@ -2411,6 +2415,23 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
     if (!text_input_active && event == ftxui::Event::Character('v') &&
         state.tabs[controller.runtime.visible_tab].role == TabRole::News) {
       request_news_article_preview(screen, controller, state, caps);
+      return true;
+    }
+    if (!text_input_active && (event == ftxui::Event::PageDown || event == ftxui::Event::PageUp) &&
+        state.tabs[controller.runtime.visible_tab].role == TabRole::News) {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      constexpr std::size_t page_size = 10;
+      if (event == ftxui::Event::PageDown) {
+        controller.runtime.news_preview_scroll += page_size;
+      } else {
+        controller.runtime.news_preview_scroll =
+            controller.runtime.news_preview_scroll > page_size
+                ? controller.runtime.news_preview_scroll - page_size
+                : 0;
+      }
+      controller.runtime.status_message = "Article preview scrolled";
+      invalidate_pane_data_snapshot(state.root);
+      screen.PostEvent(ftxui::Event::Custom);
       return true;
     }
     if (!text_input_active && event == ftxui::Event::Character('r')) {
