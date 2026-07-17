@@ -287,14 +287,36 @@ std::size_t move_cursor_vertical(const std::string& text, std::size_t cursor, in
   return std::min(next_start + column, next_end);
 }
 
-void open_in_nvim(ScreenInteractive& screen, const WorkspacePersistentState& state, const SearchResult& result) {
+std::string editor_display_name(const std::string& editor) {
+  return editor == "vscode" ? "VS Code" : editor == "vim" ? "Vim" : "Neovim";
+}
+
+bool editor_available(const std::string& editor, const EnvironmentCapabilities& caps) {
+  return editor == "vscode" ? caps.vscode : editor == "vim" ? caps.vim : caps.nvim;
+}
+
+bool open_in_configured_editor(ScreenInteractive& screen,
+                               const WorkspacePersistentState& state,
+                               const EnvironmentCapabilities& caps,
+                               const SearchResult& result) {
+  if (!editor_available(state.external_editor, caps)) {
+    return false;
+  }
   ProcessRunner runner;
   ProcessRequest request;
   request.cwd = state.root;
   const auto full_path = std::filesystem::absolute(state.root / result.path);
-  request.argv = {"nvim", "+" + std::to_string(std::max(result.line, 1)), full_path.string()};
+  const auto line = std::max(result.line, 1);
+  if (state.external_editor == "vscode") {
+    request.argv = {"code", "--goto", full_path.string() + ":" + std::to_string(line) + ":" +
+                                           std::to_string(std::max(result.column, 1))};
+  } else {
+    const auto editor = state.external_editor == "vim" ? "vim" : "nvim";
+    request.argv = {editor, "+" + std::to_string(line), full_path.string()};
+  }
   auto attached = screen.WithRestoredIO([&] { runner.run_attached(request); });
   attached();
+  return true;
 }
 
 void append_tail(std::string& target, const std::string& chunk, std::size_t limit = 400) {
@@ -417,6 +439,11 @@ struct CommandOverlayState {
 struct CommitOverlayState {
   bool active = false;
   std::string message;
+};
+
+struct SettingsOverlayState {
+  bool active = false;
+  int selected_editor = 1;
 };
 
 void set_status(ShellTaskController& controller, const std::string& message);
@@ -563,6 +590,7 @@ std::vector<std::string> split_csv_row(const std::string& row) {
   std::vector<std::string> cells;
   std::string current;
   bool in_quotes = false;
+  const char delimiter = row.find(',') != std::string::npos ? ',' : ';';
   for (std::size_t i = 0; i < row.size(); ++i) {
     const char ch = row[i];
     if (ch == '"') {
@@ -574,7 +602,7 @@ std::vector<std::string> split_csv_row(const std::string& row) {
       }
       continue;
     }
-    if (ch == ',' && !in_quotes) {
+    if (ch == delimiter && !in_quotes) {
       cells.push_back(trim_copy(current));
       current.clear();
       continue;
@@ -806,6 +834,152 @@ std::unordered_map<std::string, MarketQuote> load_local_quotes_from_csv(const st
   return quotes;
 }
 
+std::unordered_map<std::string, std::vector<MarketCandle>> load_local_candles_from_csv(
+    const std::filesystem::path& root,
+    const std::vector<std::string>& sources) {
+  std::unordered_map<std::string, std::vector<MarketCandle>> candles;
+  for (const auto& source : sources) {
+    if (std::filesystem::path(source).extension() != ".csv") {
+      continue;
+    }
+    std::ifstream in(root / source);
+    std::string header_line;
+    if (!in || !std::getline(in, header_line)) {
+      continue;
+    }
+    auto headers = split_csv_row(header_line);
+    for (auto& header : headers) {
+      header = lower_copy(header);
+    }
+    const int symbol_idx = header_index(headers, {"symbol", "ticker", "asset"});
+    const int datetime_idx = header_index(headers, {"datetime", "date", "timestamp", "time"});
+    const int open_idx = header_index(headers, {"open"});
+    const int high_idx = header_index(headers, {"high"});
+    const int low_idx = header_index(headers, {"low"});
+    const int close_idx = header_index(headers, {"close"});
+    const int volume_idx = header_index(headers, {"volume"});
+    if (symbol_idx < 0 || datetime_idx < 0 || open_idx < 0 || high_idx < 0 || low_idx < 0 || close_idx < 0) {
+      continue;
+    }
+    std::string row;
+    while (std::getline(in, row)) {
+      const auto cells = split_csv_row(row);
+      const auto max_required = std::max({symbol_idx, datetime_idx, open_idx, high_idx, low_idx, close_idx});
+      if (max_required >= static_cast<int>(cells.size())) {
+        continue;
+      }
+      auto symbol = trim_copy(cells[static_cast<std::size_t>(symbol_idx)]);
+      std::transform(symbol.begin(), symbol.end(), symbol.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+      });
+      const auto open = parse_decimal(cells[static_cast<std::size_t>(open_idx)]);
+      const auto high = parse_decimal(cells[static_cast<std::size_t>(high_idx)]);
+      const auto low = parse_decimal(cells[static_cast<std::size_t>(low_idx)]);
+      const auto close = parse_decimal(cells[static_cast<std::size_t>(close_idx)]);
+      if (symbol.empty() || !open || !high || !low || !close) {
+        continue;
+      }
+      MarketCandle candle{cells[static_cast<std::size_t>(datetime_idx)], *open, *high, *low, *close, 0.0};
+      if (volume_idx >= 0 && volume_idx < static_cast<int>(cells.size())) {
+        candle.volume = parse_decimal(cells[static_cast<std::size_t>(volume_idx)]).value_or(0.0);
+      }
+      candles[symbol].push_back(std::move(candle));
+    }
+  }
+  for (auto& [_, series] : candles) {
+    std::sort(series.begin(), series.end(), [](const MarketCandle& lhs, const MarketCandle& rhs) {
+      return lhs.datetime < rhs.datetime;
+    });
+    if (series.size() > 30) {
+      series.erase(series.begin(), series.end() - 30);
+    }
+  }
+  return candles;
+}
+
+std::vector<MarketCandle> fetch_twelve_data_candles(const std::filesystem::path& root,
+                                                     const std::string& token,
+                                                     const std::string& symbol) {
+  ProcessRunner runner;
+  ProcessRequest request;
+  request.cwd = root;
+  request.argv = {
+      "curl", "--silent", "--show-error", "--fail",
+      "https://api.twelvedata.com/time_series?symbol=" + symbol +
+          "&interval=1day&outputsize=30&format=CSV&apikey=" + token,
+  };
+  request.timeout = std::chrono::milliseconds(5000);
+  const auto result = runner.run(request);
+  if (result.exit_code != 0) {
+    return {};
+  }
+  std::istringstream in(result.stdout_text);
+  std::string header_line;
+  if (!std::getline(in, header_line)) {
+    return {};
+  }
+  auto headers = split_csv_row(header_line);
+  for (auto& header : headers) {
+    header = lower_copy(header);
+  }
+  const int datetime_idx = header_index(headers, {"datetime", "date"});
+  const int open_idx = header_index(headers, {"open"});
+  const int high_idx = header_index(headers, {"high"});
+  const int low_idx = header_index(headers, {"low"});
+  const int close_idx = header_index(headers, {"close"});
+  const int volume_idx = header_index(headers, {"volume"});
+  if (datetime_idx < 0 || open_idx < 0 || high_idx < 0 || low_idx < 0 || close_idx < 0) {
+    return {};
+  }
+  std::vector<MarketCandle> candles;
+  std::string row;
+  while (std::getline(in, row)) {
+    const auto cells = split_csv_row(row);
+    const auto max_required = std::max({datetime_idx, open_idx, high_idx, low_idx, close_idx});
+    if (max_required >= static_cast<int>(cells.size())) {
+      continue;
+    }
+    const auto open = parse_decimal(cells[static_cast<std::size_t>(open_idx)]);
+    const auto high = parse_decimal(cells[static_cast<std::size_t>(high_idx)]);
+    const auto low = parse_decimal(cells[static_cast<std::size_t>(low_idx)]);
+    const auto close = parse_decimal(cells[static_cast<std::size_t>(close_idx)]);
+    if (!open || !high || !low || !close) {
+      continue;
+    }
+    MarketCandle candle{cells[static_cast<std::size_t>(datetime_idx)], *open, *high, *low, *close, 0.0};
+    if (volume_idx >= 0 && volume_idx < static_cast<int>(cells.size())) {
+      candle.volume = parse_decimal(cells[static_cast<std::size_t>(volume_idx)]).value_or(0.0);
+    }
+    candles.push_back(std::move(candle));
+  }
+  std::sort(candles.begin(), candles.end(), [](const MarketCandle& lhs, const MarketCandle& rhs) {
+    return lhs.datetime < rhs.datetime;
+  });
+  return candles;
+}
+
+MarketQuote quote_from_candles(const std::string& symbol,
+                               const std::vector<MarketCandle>& candles,
+                               const std::string& provider) {
+  MarketQuote quote;
+  quote.symbol = symbol;
+  quote.provider = provider;
+  if (candles.empty()) {
+    quote.status = "no candle data returned";
+    return quote;
+  }
+  quote.has_data = true;
+  quote.last_price = candles.back().close;
+  if (candles.size() > 1) {
+    quote.change = candles.back().close - candles[candles.size() - 2].close;
+    if (candles[candles.size() - 2].close != 0.0) {
+      quote.percent_change = quote.change * 100.0 / candles[candles.size() - 2].close;
+    }
+  }
+  quote.status = "ok";
+  return quote;
+}
+
 std::optional<AlertRule> parse_alert_rule_line(std::string line, const std::string& source) {
   auto cleaned = trim_copy(std::move(line));
   if (cleaned.empty() || cleaned[0] == '#') {
@@ -897,17 +1071,24 @@ std::vector<TriggeredAlert> evaluate_alerts(const std::vector<AlertRule>& rules,
   return triggered;
 }
 
-std::string market_provider_label(bool has_local_quotes, bool has_finnhub) {
-  if (has_local_quotes && has_finnhub) {
-    return "local-csv+finnhub";
+std::string market_provider_label(bool has_local, bool has_twelve_data, bool has_finnhub) {
+  std::string label;
+  const auto append = [&](const std::string& provider) {
+    if (!label.empty()) {
+      label += "+";
+    }
+    label += provider;
+  };
+  if (has_local) {
+    append("local-csv");
   }
-  if (has_local_quotes) {
-    return "local-csv";
+  if (has_twelve_data) {
+    append("twelve-data");
   }
   if (has_finnhub) {
-    return "finnhub";
+    append("finnhub");
   }
-  return "none";
+  return label.empty() ? "none" : label;
 }
 
 std::vector<std::string> capability_notes_for(const WorkspaceRuntimeState& runtime,
@@ -930,9 +1111,9 @@ std::vector<std::string> capability_notes_for(const WorkspaceRuntimeState& runti
   if (role == TabRole::Finance) {
     if (!runtime.market_data_enabled) {
       if (!caps.curl) {
-        notes.push_back("Finance quotes are disabled because local quotes are missing and `curl` is unavailable.");
-      } else if (!caps.finnhub_api_key) {
-        notes.push_back("Finance quotes are disabled until local quotes exist or `FINNHUB_API_KEY` is detected.");
+        notes.push_back("Market data is disabled because local OHLC data is missing and `curl` is unavailable.");
+      } else if (!caps.twelve_data_api_key && !caps.finnhub_api_key) {
+        notes.push_back("Market data is disabled until local OHLC data or a supported API key is detected.");
       } else {
         notes.push_back("Finance quotes are disabled until a watchlist symbol matches a working provider.");
       }
@@ -1203,10 +1384,14 @@ void bootstrap_runtime_state(const WorkspacePersistentState& persistent,
   runtime.balances = load_balances_from_csv(persistent.root, runtime.finance_data_sources);
   runtime.alert_rules = load_alert_rules(persistent.root);
   const auto local_quotes = load_local_quotes_from_csv(persistent.root, runtime.finance_data_sources);
+  runtime.market_candles = load_local_candles_from_csv(persistent.root, runtime.finance_data_sources);
   runtime.market_quotes = local_quotes;
   runtime.triggered_alerts = evaluate_alerts(runtime.alert_rules, runtime.market_quotes);
-  runtime.market_data_enabled = !local_quotes.empty() || (caps.curl && caps.finnhub_api_key);
-  runtime.market_data_provider = market_provider_label(!local_quotes.empty(), caps.curl && caps.finnhub_api_key);
+  runtime.market_data_enabled = !local_quotes.empty() || !runtime.market_candles.empty() ||
+                                (caps.curl && (caps.twelve_data_api_key || caps.finnhub_api_key));
+  runtime.market_data_provider = market_provider_label(!local_quotes.empty() || !runtime.market_candles.empty(),
+                                                       caps.curl && caps.twelve_data_api_key,
+                                                       caps.curl && caps.finnhub_api_key);
   runtime.scratch_editor.buffer = load_scratch_buffer(persistent.root);
   runtime.scratch_editor.cursor = runtime.scratch_editor.buffer.size();
   if (!runtime.market_entries.empty()) {
@@ -1289,18 +1474,24 @@ void refresh_market_quotes(ScreenInteractive& screen,
                            const WorkspacePersistentState& persistent,
                            const EnvironmentCapabilities& caps,
                            bool refresh_claimed) {
-  const auto token = (caps.curl && caps.finnhub_api_key) ? resolve_env_var(persistent.root, "FINNHUB_API_KEY")
-                                                         : std::nullopt;
-  const auto local_quotes = load_local_quotes_from_csv(persistent.root, discover_finance_sources(persistent.root));
-  if (local_quotes.empty() && !token) {
+  const auto finnhub_token = (caps.curl && caps.finnhub_api_key)
+                                 ? resolve_env_var(persistent.root, "FINNHUB_API_KEY")
+                                 : std::nullopt;
+  const auto twelve_data_token = (caps.curl && caps.twelve_data_api_key)
+                                     ? resolve_env_var(persistent.root, "TWELVE_DATA_API_KEY")
+                                     : std::nullopt;
+  const auto sources = discover_finance_sources(persistent.root);
+  const auto local_quotes = load_local_quotes_from_csv(persistent.root, sources);
+  const auto local_candles = load_local_candles_from_csv(persistent.root, sources);
+  if (local_quotes.empty() && local_candles.empty() && !twelve_data_token && !finnhub_token) {
     if (refresh_claimed) {
       std::lock_guard<std::mutex> lock(controller.mutex);
       controller.runtime.market_data_refresh_in_progress = false;
     }
     if (!caps.curl) {
-      set_status(controller, "No local quote CSV found and curl is unavailable for Finnhub refresh");
-    } else if (!caps.finnhub_api_key) {
-      set_status(controller, "No local quote CSV found and FINNHUB_API_KEY was not detected; run doctor");
+      set_status(controller, "No local OHLC CSV found and curl is unavailable for market refresh");
+    } else if (!caps.twelve_data_api_key && !caps.finnhub_api_key) {
+      set_status(controller, "No local OHLC CSV or market API key found; run doctor");
     } else {
       set_status(controller, "No local quote CSV or working Finnhub token found");
     }
@@ -1308,23 +1499,50 @@ void refresh_market_quotes(ScreenInteractive& screen,
   }
 
   std::vector<MarketEntry> watchlist;
+  std::unordered_map<std::string, std::vector<MarketCandle>> candles;
+  std::string focused_symbol;
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
     watchlist = controller.runtime.market_entries;
+    candles = controller.runtime.market_candles;
+    focused_symbol = controller.runtime.current_market_symbol;
+  }
+  for (const auto& [symbol, series] : local_candles) {
+    candles[symbol] = series;
   }
   screen.PostEvent(ftxui::Event::Custom);
 
   std::unordered_map<std::string, MarketQuote> quotes;
   bool used_local = false;
+  bool used_twelve_data = false;
   bool used_finnhub = false;
   for (const auto& market : watchlist) {
+    if (auto found = local_candles.find(market.symbol); found != local_candles.end() && !found->second.empty()) {
+      quotes[market.symbol] = quote_from_candles(market.symbol, found->second, "local-csv");
+      used_local = true;
+      continue;
+    }
+    if (twelve_data_token && market.symbol == focused_symbol) {
+      auto series = fetch_twelve_data_candles(persistent.root, *twelve_data_token, market.symbol);
+      if (!series.empty()) {
+        quotes[market.symbol] = quote_from_candles(market.symbol, series, "twelve-data");
+        candles[market.symbol] = std::move(series);
+        used_twelve_data = true;
+        continue;
+      }
+    }
+    if (auto found = candles.find(market.symbol); found != candles.end() && !found->second.empty()) {
+      quotes[market.symbol] = quote_from_candles(market.symbol, found->second, "twelve-data-cache");
+      used_twelve_data = true;
+      continue;
+    }
     if (auto found = local_quotes.find(market.symbol); found != local_quotes.end()) {
       quotes[market.symbol] = found->second;
       used_local = true;
       continue;
     }
-    if (token) {
-      quotes[market.symbol] = fetch_finnhub_quote(persistent.root, *token, market.symbol);
+    if (finnhub_token) {
+      quotes[market.symbol] = fetch_finnhub_quote(persistent.root, *finnhub_token, market.symbol);
       used_finnhub = true;
       continue;
     }
@@ -1337,9 +1555,10 @@ void refresh_market_quotes(ScreenInteractive& screen,
   {
     std::lock_guard<std::mutex> lock(controller.mutex);
     controller.runtime.market_quotes = std::move(quotes);
+    controller.runtime.market_candles = std::move(candles);
     controller.runtime.triggered_alerts = evaluate_alerts(controller.runtime.alert_rules, controller.runtime.market_quotes);
-    controller.runtime.market_data_enabled = used_local || used_finnhub;
-    controller.runtime.market_data_provider = market_provider_label(used_local, used_finnhub);
+    controller.runtime.market_data_enabled = used_local || used_twelve_data || used_finnhub;
+    controller.runtime.market_data_provider = market_provider_label(used_local, used_twelve_data, used_finnhub);
     controller.runtime.market_data_refresh_in_progress = false;
     controller.runtime.portfolio_lines = portfolio_lines_for(controller.runtime);
     controller.runtime.status_message = controller.runtime.triggered_alerts.empty()
@@ -1424,6 +1643,63 @@ void add_watchlist_symbol(ScreenInteractive& screen,
   if (changed) {
     request_market_quotes(screen, controller, persistent, caps);
   }
+}
+
+void remove_watchlist_symbol(ScreenInteractive& screen,
+                             ShellTaskController& controller,
+                             const WorkspacePersistentState& persistent,
+                             std::optional<std::string> requested_symbol = std::nullopt) {
+  std::vector<MarketEntry> entries;
+  std::string removed_symbol;
+  {
+    std::lock_guard<std::mutex> lock(controller.mutex);
+    if (controller.runtime.market_entries.empty()) {
+      controller.runtime.status_message = "Watchlist is empty";
+    } else if (controller.runtime.market_entries.size() == 1) {
+      controller.runtime.status_message = "Keep at least one ticker in the watchlist";
+    } else {
+      auto selected = controller.runtime.selected_market_index;
+      if (requested_symbol) {
+        std::transform(requested_symbol->begin(),
+                       requested_symbol->end(),
+                       requested_symbol->begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+        const auto found = std::find_if(controller.runtime.market_entries.begin(),
+                                        controller.runtime.market_entries.end(),
+                                        [&](const MarketEntry& entry) { return entry.symbol == *requested_symbol; });
+        if (found == controller.runtime.market_entries.end()) {
+          controller.runtime.status_message = *requested_symbol + " is not in the watchlist";
+          screen.PostEvent(ftxui::Event::Custom);
+          return;
+        }
+        selected = static_cast<std::size_t>(std::distance(controller.runtime.market_entries.begin(), found));
+      }
+      removed_symbol = controller.runtime.market_entries[selected].symbol;
+      controller.runtime.market_entries.erase(controller.runtime.market_entries.begin() + selected);
+      controller.runtime.market_quotes.erase(removed_symbol);
+      controller.runtime.market_candles.erase(removed_symbol);
+      controller.runtime.triggered_alerts =
+          evaluate_alerts(controller.runtime.alert_rules, controller.runtime.market_quotes);
+      if (controller.runtime.market_entries.empty()) {
+        controller.runtime.selected_market_index = 0;
+        controller.runtime.current_market_symbol.clear();
+      } else {
+        controller.runtime.selected_market_index =
+            std::min(selected, controller.runtime.market_entries.size() - 1);
+        controller.runtime.current_market_symbol =
+            controller.runtime.market_entries[controller.runtime.selected_market_index].symbol;
+      }
+      controller.runtime.portfolio_lines = portfolio_lines_for(controller.runtime);
+      refresh_note_context(persistent.root, controller.runtime);
+      controller.runtime.status_message = "Removed " + removed_symbol;
+      entries = controller.runtime.market_entries;
+    }
+  }
+  if (!removed_symbol.empty() && !persist_watchlist(persistent.root, entries)) {
+    set_status(controller, "Removed " + removed_symbol + ", but failed to persist watchlist");
+  }
+  invalidate_pane_data_snapshot(persistent.root);
+  screen.PostEvent(ftxui::Event::Custom);
 }
 
 void add_alert_rule(ScreenInteractive& screen,
@@ -1651,12 +1927,14 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
       "commit <message>",
       "branch <name>",
       "branch-new <name>",
+      "editor <vim|nvim|vscode>",
       "cancel",
       "quit",
   };
   if (role == TabRole::Finance) {
     suggestions.push_back("refresh");
     suggestions.push_back("add <ticker>");
+    suggestions.push_back("remove <ticker>");
     suggestions.push_back("alert <ticker> >= <price> [note]");
     suggestions.push_back("focus <ticker>");
   } else if (role == TabRole::Review) {
@@ -1687,7 +1965,7 @@ std::string controls_for_role(TabRole role) {
     case TabRole::Review:
       return "f files/review   j/k move   Enter open   [/] hunks   s/u file   S/U hunk   c commit";
     case TabRole::Finance:
-      return "j/k ticker   Enter focus   a add ticker   A alert   x refresh";
+      return "j/k ticker   Enter focus   a add   d remove   A alert   x refresh";
     case TabRole::Notes:
       return "E context note   e scratchpad   Ctrl+S save   Ctrl+R reload   Esc stop editing";
   }
@@ -1988,7 +2266,7 @@ bool unstage_selected_git_entry(ScreenInteractive& screen,
 
 bool execute_palette_command(ScreenInteractive& screen,
                              ShellTaskController& controller,
-                             const WorkspacePersistentState& state,
+                             WorkspacePersistentState& state,
                              const EnvironmentCapabilities& caps,
                              std::string command_text) {
   auto argv = split_command_line(command_text);
@@ -2004,6 +2282,18 @@ bool execute_palette_command(ScreenInteractive& screen,
   }();
 
   const auto command = argv.front();
+  if (command == "editor") {
+    if (argv.size() != 2 || (argv[1] != "vim" && argv[1] != "nvim" && argv[1] != "vscode")) {
+      set_status(controller, "Usage: editor <vim|nvim|vscode>");
+    } else {
+      state.external_editor = argv[1];
+      set_status(controller,
+                 "Editor set to " + editor_display_name(state.external_editor) +
+                     (editor_available(state.external_editor, caps) ? "" : " (not found on PATH)"));
+    }
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
   if (command == "run") {
     if (argv.size() > 1) {
       auto command_line = command_text.substr(command_text.find_first_not_of(" \t", command.size()));
@@ -2266,6 +2556,20 @@ bool execute_palette_command(ScreenInteractive& screen,
     add_watchlist_symbol(screen, controller, state, caps, argv[1]);
     return true;
   }
+  if (command == "remove") {
+    if (current_role != TabRole::Finance) {
+      set_status(controller, "remove is only available in Finance");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    if (argv.size() != 2) {
+      set_status(controller, "Usage: remove <ticker>");
+      screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    remove_watchlist_symbol(screen, controller, state, argv[1]);
+    return true;
+  }
   if (command == "alert") {
     if (current_role != TabRole::Finance) {
       set_status(controller, "alert is only available in Finance");
@@ -2370,7 +2674,7 @@ Element render_summary(const WorkspacePersistentState& state,
   return render_layout_tree(current.layout, snapshot, state, runtime, caps) | flex;
 }
 
-void launch_ftxui_shell(const WorkspacePersistentState& state,
+void launch_ftxui_shell(WorkspacePersistentState& state,
                         WorkspaceRuntimeState initial_runtime,
                         const EnvironmentCapabilities& caps,
                         bool safe_mode) {
@@ -2382,6 +2686,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   AlertOverlayState alert_overlay;
   CommandOverlayState command_overlay;
   CommitOverlayState commit_overlay;
+  SettingsOverlayState settings_overlay;
   // Runtime-backed pane lines are rebuilt from the cached scan on each render. UI-only
   // edits therefore only need a redraw; dropping the cache here made every keystroke
   // rescan the workspace.
@@ -2395,6 +2700,22 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
   }
 
   auto tabs = Toggle(&tab_names, &tab_index);
+  auto header = Renderer([&] {
+    WorkspaceRuntimeState runtime_snapshot;
+    {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      runtime_snapshot = controller.runtime;
+    }
+    const auto& current = state.tabs[runtime_snapshot.visible_tab];
+    return hbox({
+               text("deck") | bold | color(Color::Cyan),
+               text("  " + state.name) | dim,
+               text("  /  " + current.name),
+               filler(),
+               text(editor_display_name(state.external_editor)) | dim,
+           }) |
+           xflex;
+  });
   auto footer = Renderer([&] {
     WorkspaceRuntimeState runtime_snapshot;
     {
@@ -2404,9 +2725,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
     const auto& current = state.tabs[runtime_snapshot.visible_tab];
     const auto status = runtime_snapshot.status_message.empty() ? std::string("ready")
                                                                   : runtime_snapshot.status_message;
-    return vbox({
-               text(current.name + ": " + controls_for_role(current.role)) | xflex,
-               text("status: " + status + "   : commands   q quit") | dim | xflex,
+    return hbox({
+               text(status) | (status == "ready" ? dim : color(Color::Cyan)),
+               filler(),
+               text(current.name + ": " + controls_for_role(current.role)) | dim,
+               text("   ·   , settings   : commands   q quit") | dim,
            }) |
            xflex;
   });
@@ -2425,14 +2748,18 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       runtime_snapshot.visible_tab =
           static_cast<std::size_t>(std::clamp(tab_index, 0, static_cast<int>(state.tabs.size() - 1)));
     }
-    auto tab_bar = tabs->Render() | border | color(Color::Green);
+    auto tab_bar = tabs->Render() | color(Color::Cyan) | xflex;
     auto body = render_summary(state, runtime_snapshot, caps, safe_mode);
     Element content = vbox({
+               header->Render(),
+               separator() | dim,
                tab_bar,
+               separator() | dim,
                body,
-               footer->Render() | border | dim,
+               separator() | dim,
+               footer->Render(),
            }) |
-           borderHeavy | size(WIDTH, GREATER_THAN, 100) | size(HEIGHT, GREATER_THAN, 28);
+           size(WIDTH, GREATER_THAN, 100) | size(HEIGHT, GREATER_THAN, 28);
     if (search_overlay.active) {
       auto overlay = window(
           text("Search rg"),
@@ -2513,6 +2840,30 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
           overlay | center,
       });
     }
+    if (settings_overlay.active) {
+      const std::vector<std::string> editors = {"vim", "nvim", "vscode"};
+      Elements choices;
+      for (std::size_t i = 0; i < editors.size(); ++i) {
+        const auto& editor = editors[i];
+        const auto selected = static_cast<int>(i) == settings_overlay.selected_editor;
+        auto label = std::string(selected ? "> " : "  ") + editor_display_name(editor) +
+                     (editor_available(editor, caps) ? "  available" : "  missing from PATH");
+        choices.push_back(text(label) | (selected ? bold : dim));
+      }
+      auto overlay = window(
+          text("Settings"),
+          vbox({
+              text("External editor"),
+              separator(),
+              vbox(std::move(choices)),
+              separator(),
+              text("j/k select   Enter save   Esc close"),
+          }));
+      content = dbox({
+          content,
+          overlay | center,
+      });
+    }
     return content;
   });
 
@@ -2530,7 +2881,8 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
       editor_active = controller.runtime.note_editor.editing || controller.runtime.scratch_editor.editing;
     }
     const bool text_input_active = editor_active || search_overlay.active || ticker_overlay.active ||
-                                   alert_overlay.active || command_overlay.active || commit_overlay.active;
+                                   alert_overlay.active || command_overlay.active || commit_overlay.active ||
+                                   settings_overlay.active;
     if (!text_input_active && event == ftxui::Event::Character('r')) {
       if (!state.recent_commands.empty()) {
         auto argv = split_command_line(state.recent_commands.front());
@@ -2699,6 +3051,31 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         commit_overlay.message += event.character();
         return true;
       }
+    }
+    if (settings_overlay.active) {
+      if (event == ftxui::Event::Escape) {
+        settings_overlay.active = false;
+        return true;
+      }
+      if (event == ftxui::Event::Character('j') || event == ftxui::Event::ArrowDown) {
+        settings_overlay.selected_editor = std::min(settings_overlay.selected_editor + 1, 2);
+        return true;
+      }
+      if (event == ftxui::Event::Character('k') || event == ftxui::Event::ArrowUp) {
+        settings_overlay.selected_editor = std::max(settings_overlay.selected_editor - 1, 0);
+        return true;
+      }
+      if (event == ftxui::Event::Return) {
+        static const std::vector<std::string> editors = {"vim", "nvim", "vscode"};
+        state.external_editor = editors[settings_overlay.selected_editor];
+        settings_overlay.active = false;
+        set_status(controller,
+                   "Editor set to " + editor_display_name(state.external_editor) +
+                       (editor_available(state.external_editor, caps) ? "" : " (not found on PATH)"));
+        screen.PostEvent(ftxui::Event::Custom);
+        return true;
+      }
+      return true;
     }
     if (controller.runtime.note_editor.editing) {
       if (event == ftxui::Event::Escape) {
@@ -2962,6 +3339,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
             palette_suggestions_for(state.tabs[controller.runtime.visible_tab].role);
       }
       screen.PostEvent(ftxui::Event::Custom);
+      return true;
+    }
+    if (event == ftxui::Event::Character(',')) {
+      settings_overlay.active = true;
+      settings_overlay.selected_editor = state.external_editor == "vim" ? 0 : state.external_editor == "vscode" ? 2 : 1;
       return true;
     }
     if (event == ftxui::Event::Character('/')) {
@@ -3242,6 +3624,7 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         if (selected_market) {
           invalidate_pane_data_snapshot(state.root);
           screen.PostEvent(ftxui::Event::Custom);
+          request_market_quotes(screen, controller, state, caps);
           return true;
         }
       }
@@ -3265,8 +3648,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
           SearchResult file_result;
           file_result.path = selected_git->path;
           file_result.line = target_line;
-          open_in_nvim(screen, state, file_result);
-          set_status(controller, "Opened " + selected_git->path);
+          if (open_in_configured_editor(screen, state, caps, file_result)) {
+            set_status(controller, "Opened " + selected_git->path);
+          } else {
+            set_status(controller, editor_display_name(state.external_editor) + " is not available on PATH");
+          }
           invalidate_pane_data_snapshot(state.root);
           screen.PostEvent(ftxui::Event::Custom);
           return true;
@@ -3302,8 +3688,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         }
       }
       if (selected) {
-        open_in_nvim(screen, state, *selected);
-        set_status(controller, "Opened search result");
+        if (open_in_configured_editor(screen, state, caps, *selected)) {
+          set_status(controller, "Opened search result");
+        } else {
+          set_status(controller, editor_display_name(state.external_editor) + " is not available on PATH");
+        }
         invalidate_pane_data_snapshot(state.root);
         screen.PostEvent(ftxui::Event::Custom);
         return true;
@@ -3347,8 +3736,11 @@ void launch_ftxui_shell(const WorkspacePersistentState& state,
         const auto relative_file = (std::filesystem::path(files_browser_root) / file_entry->path).lexically_normal();
         file_result.path = relative_file.string();
         file_result.line = 1;
-        open_in_nvim(screen, state, file_result);
-        set_status(controller, "Opened " + file_entry->path);
+        if (open_in_configured_editor(screen, state, caps, file_result)) {
+          set_status(controller, "Opened " + file_entry->path);
+        } else {
+          set_status(controller, editor_display_name(state.external_editor) + " is not available on PATH");
+        }
         invalidate_pane_data_snapshot(state.root);
         screen.PostEvent(ftxui::Event::Custom);
         return true;
@@ -3402,8 +3794,7 @@ void render_safe_summary(const WorkspacePersistentState& persistent,
   std::cout << "tabs: " << persistent.tabs.size() << "\n";
   std::cout << "files shown: " << runtime.files_entries.size() << "\n";
   std::cout << "watchlist: " << runtime.market_entries.size() << " symbols\n";
-  std::cout << "portfolio: " << runtime.positions.size() << " positions, " << runtime.balances.size()
-            << " balances\n";
+  std::cout << "candles: " << runtime.market_candles.size() << " symbols with OHLC history\n";
   std::cout << "git: " << (caps.git ? "available" : "missing") << "\n";
   std::cout << "search: " << (caps.rg ? "available" : "missing") << "\n";
   std::cout << "market data: " << (runtime.market_data_enabled ? runtime.market_data_provider : "disabled") << "\n";

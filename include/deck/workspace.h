@@ -74,6 +74,15 @@ struct MarketQuote {
   std::string provider = "none";
 };
 
+struct MarketCandle {
+  std::string datetime;
+  double open = 0.0;
+  double high = 0.0;
+  double low = 0.0;
+  double close = 0.0;
+  double volume = 0.0;
+};
+
 enum class NoteContextKind {
   None,
   File,
@@ -158,6 +167,7 @@ struct TabPersistentState {
 struct WorkspacePersistentState {
   std::string name;
   std::filesystem::path root;
+  std::string external_editor = "nvim";
   std::vector<TabPersistentState> tabs;
   std::size_t focused_tab = 0;
   std::string selected_log_source = "task";
@@ -191,6 +201,7 @@ struct WorkspaceRuntimeState {
   std::size_t selected_market_index = 0;
   std::string current_market_symbol;
   std::unordered_map<std::string, MarketQuote> market_quotes;
+  std::unordered_map<std::string, std::vector<MarketCandle>> market_candles;
   std::vector<std::string> finance_data_sources;
   std::vector<PositionEntry> positions;
   std::vector<BalanceEntry> balances;

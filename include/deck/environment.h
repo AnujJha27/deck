@@ -10,6 +10,9 @@ namespace deck {
 struct EnvironmentCapabilities {
   bool git = false;
   bool rg = false;
+  bool vim = false;
+  bool nvim = false;
+  bool vscode = false;
   bool curl = false;
   bool pdftotext = false;
   bool pdftoppm = false;
@@ -19,6 +22,8 @@ struct EnvironmentCapabilities {
   bool inside_tmux = false;
   bool finnhub_api_key = false;
   std::string finnhub_api_key_source;
+  bool twelve_data_api_key = false;
+  std::string twelve_data_api_key_source;
 };
 
 EnvironmentCapabilities detect_environment(const std::filesystem::path& root);

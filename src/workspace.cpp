@@ -56,6 +56,10 @@ std::string escape(std::string value) {
   return value;
 }
 
+bool is_supported_external_editor(const std::string& editor) {
+  return editor == "vim" || editor == "nvim" || editor == "vscode";
+}
+
 }  // namespace
 
 WorkspacePersistentState make_default_workspace(const std::filesystem::path& root) {
@@ -92,6 +96,7 @@ std::string serialize_workspace(const WorkspacePersistentState& state) {
   std::ostringstream out;
   out << "workspace_name=" << escape(state.name) << "\n";
   out << "workspace_root=" << escape(state.root.string()) << "\n";
+  out << "external_editor=" << state.external_editor << "\n";
   out << "focused_tab=" << state.focused_tab << "\n";
   out << "selected_log_source=" << escape(state.selected_log_source) << "\n";
   if (state.last_anchor) {
@@ -165,6 +170,8 @@ std::optional<WorkspacePersistentState> parse_workspace(
       state.name = value;
     } else if (key == "workspace_root" && !value.empty()) {
       state.root = value;
+    } else if (key == "external_editor" && is_supported_external_editor(value)) {
+      state.external_editor = value;
     } else if (key == "focused_tab") {
       state.focused_tab = static_cast<std::size_t>(std::stoul(value));
     } else if (key == "selected_log_source") {

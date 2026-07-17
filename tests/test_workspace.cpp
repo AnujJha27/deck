@@ -41,11 +41,21 @@ DECK_TEST(workspace_default_tabs) {
 DECK_TEST(workspace_round_trip) {
   auto state = deck::make_default_workspace("/tmp/deck");
   state.last_anchor = deck::PaperAnchor{8, 0.45, "transformers", "Attention"};
+  state.external_editor = "vscode";
   auto parsed = deck::parse_workspace(deck::serialize_workspace(state), state.root);
   DECK_ASSERT(parsed.has_value());
   DECK_ASSERT(parsed->tabs.size() == state.tabs.size());
   DECK_ASSERT(parsed->last_anchor.has_value());
   DECK_ASSERT(parsed->last_anchor->page == 8);
+  DECK_ASSERT(parsed->external_editor == "vscode");
+}
+
+DECK_TEST(workspace_invalid_editor_falls_back_to_neovim) {
+  auto state = deck::make_default_workspace("/tmp/deck");
+  state.external_editor = "emacs";
+  auto parsed = deck::parse_workspace(deck::serialize_workspace(state), state.root);
+  DECK_ASSERT(parsed.has_value());
+  DECK_ASSERT(parsed->external_editor == "nvim");
 }
 
 DECK_TEST(workspace_tab_upgrade_adds_missing_notes_tab) {

@@ -39,11 +39,28 @@ std::optional<std::string> column_text(sqlite3_stmt* stmt, int index) {
   return std::string(value);
 }
 
+bool workspace_has_editor_column(sqlite3* db) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "PRAGMA table_info(workspace_ui_state)", -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  bool found = false;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (name != nullptr && std::string(name) == "external_editor") {
+      found = true;
+      break;
+    }
+  }
+  sqlite3_finalize(stmt);
+  return found;
+}
+
 }  // namespace
 
 bool WorkspaceStore::ensure_schema(void* db_handle) const {
   auto* db = static_cast<sqlite3*>(db_handle);
-  return exec(db,
+  if (!exec(db,
               "BEGIN;"
               "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY);"
               "INSERT OR IGNORE INTO schema_migrations(version) VALUES(1);"
@@ -52,6 +69,7 @@ bool WorkspaceStore::ensure_schema(void* db_handle) const {
               "  workspace_name TEXT NOT NULL,"
               "  focused_tab INTEGER NOT NULL,"
               "  selected_log_source TEXT NOT NULL,"
+              "  external_editor TEXT NOT NULL DEFAULT 'nvim',"
               "  last_anchor TEXT"
               ");"
               "CREATE TABLE IF NOT EXISTS workspace_tabs("
@@ -95,7 +113,17 @@ bool WorkspaceStore::ensure_schema(void* db_handle) const {
               "  anchor TEXT NOT NULL,"
               "  PRIMARY KEY(workspace_root, paper_id, bookmark_order)"
               ");"
-              "COMMIT;");
+              "COMMIT;")) {
+    return false;
+  }
+  if (!workspace_has_editor_column(db) &&
+      !exec(db, "ALTER TABLE workspace_ui_state ADD COLUMN external_editor TEXT NOT NULL DEFAULT 'nvim';")) {
+    return false;
+  }
+  if (!exec(db, "INSERT OR IGNORE INTO schema_migrations(version) VALUES(2);")) {
+    return false;
+  }
+  return true;
 }
 
 std::optional<WorkspacePersistentState> WorkspaceStore::load(const std::filesystem::path& root) const {
@@ -109,7 +137,7 @@ std::optional<WorkspacePersistentState> WorkspaceStore::load(const std::filesyst
 
   sqlite3_stmt* workspace_stmt = nullptr;
   sqlite3_prepare_v2(db.get(),
-                     "SELECT workspace_name, focused_tab, selected_log_source, last_anchor "
+                     "SELECT workspace_name, focused_tab, selected_log_source, external_editor, last_anchor "
                      "FROM workspace_ui_state WHERE workspace_root = ?1",
                      -1,
                      &workspace_stmt,
@@ -123,7 +151,10 @@ std::optional<WorkspacePersistentState> WorkspaceStore::load(const std::filesyst
   state.name = reinterpret_cast<const char*>(sqlite3_column_text(workspace_stmt, 0));
   state.focused_tab = static_cast<std::size_t>(sqlite3_column_int(workspace_stmt, 1));
   state.selected_log_source = reinterpret_cast<const char*>(sqlite3_column_text(workspace_stmt, 2));
-  if (const auto* anchor_text = reinterpret_cast<const char*>(sqlite3_column_text(workspace_stmt, 3))) {
+  if (const auto* editor = reinterpret_cast<const char*>(sqlite3_column_text(workspace_stmt, 3))) {
+    state.external_editor = editor;
+  }
+  if (const auto* anchor_text = reinterpret_cast<const char*>(sqlite3_column_text(workspace_stmt, 4))) {
     state.last_anchor = parse_anchor(anchor_text);
   }
   sqlite3_finalize(workspace_stmt);
@@ -192,11 +223,12 @@ bool WorkspaceStore::save(const WorkspacePersistentState& state) const {
   sqlite3_stmt* workspace_stmt = nullptr;
   sqlite3_prepare_v2(db.get(),
                      "INSERT INTO workspace_ui_state(workspace_root, workspace_name, focused_tab, "
-                     "selected_log_source, last_anchor) VALUES(?1, ?2, ?3, ?4, ?5) "
+                     "selected_log_source, external_editor, last_anchor) VALUES(?1, ?2, ?3, ?4, ?5, ?6) "
                      "ON CONFLICT(workspace_root) DO UPDATE SET "
                      "workspace_name=excluded.workspace_name, "
                      "focused_tab=excluded.focused_tab, "
                      "selected_log_source=excluded.selected_log_source, "
+                     "external_editor=excluded.external_editor, "
                      "last_anchor=excluded.last_anchor",
                      -1,
                      &workspace_stmt,
@@ -205,10 +237,11 @@ bool WorkspaceStore::save(const WorkspacePersistentState& state) const {
   bind_text(workspace_stmt, 2, state.name);
   sqlite3_bind_int(workspace_stmt, 3, static_cast<int>(state.focused_tab));
   bind_text(workspace_stmt, 4, state.selected_log_source);
+  bind_text(workspace_stmt, 5, state.external_editor);
   if (state.last_anchor) {
-    bind_text(workspace_stmt, 5, serialize_anchor(*state.last_anchor));
+    bind_text(workspace_stmt, 6, serialize_anchor(*state.last_anchor));
   } else {
-    sqlite3_bind_null(workspace_stmt, 5);
+    sqlite3_bind_null(workspace_stmt, 6);
   }
   if (sqlite3_step(workspace_stmt) != SQLITE_DONE) {
     sqlite3_finalize(workspace_stmt);

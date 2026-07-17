@@ -11,6 +11,7 @@
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -191,6 +192,40 @@ std::vector<std::string> lines_for_files(const WorkspacePersistentState& state, 
       "Files seen: " + std::to_string(files.total_entries),
       "Hot extensions: " + summarize_extensions(files.extensions),
   };
+}
+
+void append_selected_file_preview(std::vector<std::string>& lines,
+                                  const WorkspacePersistentState& state,
+                                  const WorkspaceRuntimeState& runtime) {
+  if (runtime.files_entries.empty() || runtime.selected_file_index >= runtime.files_entries.size()) {
+    return;
+  }
+  const auto& entry = runtime.files_entries[runtime.selected_file_index];
+  if (entry.is_directory) {
+    return;
+  }
+  const auto path = state.root / runtime.files_browser_root / entry.path;
+  std::error_code ec;
+  if (std::filesystem::file_size(path, ec) > 64 * 1024 || ec) {
+    lines.push_back("Preview unavailable: file is too large");
+    return;
+  }
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    lines.push_back("Preview unavailable: cannot read " + entry.path);
+    return;
+  }
+  std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  if (content.find('\0') != std::string::npos) {
+    lines.push_back("Preview unavailable: binary file");
+    return;
+  }
+  lines.push_back("Preview: " + entry.path);
+  std::istringstream preview(content);
+  std::string line;
+  for (std::size_t i = 0; i < 6 && std::getline(preview, line); ++i) {
+    lines.push_back("  " + line);
+  }
 }
 
 std::vector<std::string> lines_for_terminal(const WorkspacePersistentState& state,
@@ -447,6 +482,12 @@ std::vector<std::string> lines_for_git(const WorkspacePersistentState& state,
       const auto& entry = runtime.git_entries[i];
       const auto prefix = i == runtime.selected_git_index ? "> " : "  ";
       auto label = prefix + entry.path + " [" + git_status_label(entry) + "]";
+      if (entry.worktree_status != " " || entry.index_status == "?") {
+        label += "  [s stage]";
+      }
+      if (entry.index_status != " " && entry.index_status != "?") {
+        label += "  [u unstage]";
+      }
       if (entry.renamed && !entry.original_path.empty()) {
         label += " <- " + entry.original_path;
       }
@@ -514,7 +555,7 @@ std::vector<std::string> lines_for_tasks(const WorkspaceRuntimeState& runtime) {
 std::vector<std::string> lines_for_markets(const WorkspaceRuntimeState& runtime) {
   std::vector<std::string> lines = {
       "Watchlist entries: " + std::to_string(runtime.market_entries.size()),
-      "enter focus  j/k move  a add  x refresh",
+      "enter focus  j/k move  a add  d remove  x refresh",
       runtime.market_entries.empty() ? "No watchlist configured" : "Selected: " + runtime.market_entries[runtime.selected_market_index].symbol,
   };
   if (runtime.market_data_enabled) {
@@ -525,19 +566,79 @@ std::vector<std::string> lines_for_markets(const WorkspaceRuntimeState& runtime)
   lines.push_back("Alerts: " + std::to_string(runtime.alert_rules.size()) + "  triggered: " +
                   std::to_string(runtime.triggered_alerts.size()));
   if (!runtime.market_data_enabled) {
-    lines.push_back("Hint: add local quote CSV data, or ensure `doctor` sees FINNHUB_API_KEY and curl.");
+    lines.push_back("Hint: add local OHLC CSV data, or ensure doctor sees TWELVE_DATA_API_KEY and curl.");
   }
   return lines;
 }
 
 std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtime) {
-  std::vector<std::string> lines = {
-      runtime.current_market_symbol.empty() ? "No market selected" : "Focus: " + runtime.current_market_symbol,
-      "Sources: " + std::to_string(runtime.finance_data_sources.size()),
-  };
-  if (!runtime.portfolio_lines.empty()) {
-    lines.insert(lines.end(), runtime.portfolio_lines.begin(), runtime.portfolio_lines.end());
+  const auto symbol = runtime.current_market_symbol;
+  if (symbol.empty()) {
+    return {"No market selected", "Choose a watchlist symbol to render daily candles."};
   }
+  const auto found = runtime.market_candles.find(symbol);
+  if (found == runtime.market_candles.end() || found->second.empty()) {
+    return {
+        symbol + "  ·  1D",
+        "No candle history available.",
+        "Set TWELVE_DATA_API_KEY or add an OHLC CSV with:",
+        "symbol,date,open,high,low,close,volume",
+        "Press x to refresh market data.",
+    };
+  }
+
+  constexpr std::size_t chart_height = 12;
+  constexpr std::size_t max_candles = 24;
+  const auto& all_candles = found->second;
+  const auto begin = all_candles.size() > max_candles ? all_candles.size() - max_candles : 0;
+  std::vector<MarketCandle> candles(all_candles.begin() + static_cast<std::ptrdiff_t>(begin), all_candles.end());
+  double chart_high = candles.front().high;
+  double chart_low = candles.front().low;
+  for (const auto& candle : candles) {
+    chart_high = std::max(chart_high, candle.high);
+    chart_low = std::min(chart_low, candle.low);
+  }
+  const auto range = std::max(chart_high - chart_low, 0.000001);
+  const auto row_for = [&](double value) {
+    const auto normalized = (chart_high - value) / range;
+    return static_cast<std::size_t>(std::clamp(normalized * (chart_height - 1), 0.0, chart_height - 1.0));
+  };
+
+  std::vector<std::string> lines;
+  const auto& last = candles.back();
+  std::ostringstream heading;
+  heading << symbol << "  ·  1D  ·  " << candles.size() << " sessions   O " << std::fixed << std::setprecision(2)
+          << last.open << "  H " << last.high << "  L " << last.low << "  C " << last.close;
+  lines.push_back(heading.str());
+  for (std::size_t row = 0; row < chart_height; ++row) {
+    std::ostringstream chart_row;
+    if (row == 0) {
+      chart_row << std::fixed << std::setprecision(2) << std::setw(9) << chart_high << " ┤";
+    } else if (row + 1 == chart_height) {
+      chart_row << std::fixed << std::setprecision(2) << std::setw(9) << chart_low << " ┤";
+    } else {
+      chart_row << "          │";
+    }
+    for (const auto& candle : candles) {
+      const auto high_row = row_for(candle.high);
+      const auto low_row = row_for(candle.low);
+      const auto open_row = row_for(candle.open);
+      const auto close_row = row_for(candle.close);
+      const auto body_top = std::min(open_row, close_row);
+      const auto body_bottom = std::max(open_row, close_row);
+      if (row >= body_top && row <= body_bottom) {
+        chart_row << (candle.close >= candle.open ? "█ " : "▓ ");
+      } else if (row >= high_row && row <= low_row) {
+        chart_row << "│ ";
+      } else {
+        chart_row << "  ";
+      }
+    }
+    lines.push_back(chart_row.str());
+  }
+  lines.push_back("          └" + std::string(candles.size() * 2, '-'));
+  lines.push_back("           " + candles.front().datetime + "  →  " + candles.back().datetime);
+  lines.push_back("           █ up/open-close   ▓ down/open-close   │ wick");
   return lines;
 }
 
@@ -691,16 +792,16 @@ Color pane_accent(PaneKind kind) {
     case PaneKind::Terminal:
     case PaneKind::Tasks:
     case PaneKind::Logs:
-      return Color::Yellow;
+      return Color::White;
     case PaneKind::Git:
     case PaneKind::Diff:
-      return Color::Magenta;
+      return Color::Yellow;
     case PaneKind::Markets:
     case PaneKind::Portfolio:
       return Color::Green;
     case PaneKind::Notes:
     case PaneKind::Scratch:
-      return Color::Blue;
+      return Color::Cyan;
   }
   return Color::White;
 }
@@ -726,7 +827,17 @@ class StaticPane final : public Pane {
     component_ = Renderer([this] {
       Elements rows;
       for (const auto& line : lines_) {
-        rows.push_back(text(line));
+        auto row = text(line);
+        if (line.starts_with("> ")) {
+          row = row | bold | color(Color::Cyan);
+        } else if (line.starts_with("Preview:") || line.starts_with("selected:") ||
+                   line.starts_with("focus:")) {
+          row = row | color(Color::Cyan);
+        } else if (line.starts_with("status:") || line.starts_with("controls:") ||
+                   line.starts_with("enter ") || line.starts_with("hunks:")) {
+          row = row | dim;
+        }
+        rows.push_back(std::move(row));
       }
       if (rows.empty()) {
         rows.push_back(text("No data"));
@@ -734,10 +845,12 @@ class StaticPane final : public Pane {
       const auto accent = pane_accent(id_);
       const auto badge_color = status_ == PaneStatus::Degraded ? Color::Red : accent;
       auto title = hbox({
-          text(" " + title_ + " ") | bold | color(accent),
-          text(" " + pane_status_label(status_) + " ") | dim | color(badge_color),
+          text("● ") | color(accent),
+          text(title_) | bold,
+          filler(),
+          text(pane_status_label(status_)) | dim | color(badge_color),
       });
-      return window(title, vbox(std::move(rows)) | flex) | color(accent);
+      return window(title, vbox(std::move(rows)) | flex);
     });
   }
 
@@ -824,6 +937,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
           const auto prefix = i == runtime.selected_file_index ? "> " : "  ";
           snapshot.files_lines.push_back(prefix + entry.path + (entry.is_directory ? "/" : ""));
         }
+        append_selected_file_preview(snapshot.files_lines, state, runtime);
       }
       snapshot.terminal_lines = lines_for_terminal(state, runtime);
       if (!runtime.current_search_query.empty()) {
@@ -846,7 +960,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       if (!runtime.market_entries.empty()) {
         snapshot.markets_lines = {
             "Watchlist entries: " + std::to_string(runtime.market_entries.size()),
-            "enter focus  j/k move  a add  x refresh",
+            "enter focus  j/k move  a add  d remove  x refresh",
         };
         for (std::size_t i = 0; i < runtime.market_entries.size() && i < 8; ++i) {
           const auto& market = runtime.market_entries[i];
@@ -902,6 +1016,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       const auto prefix = i == runtime.selected_file_index ? "> " : "  ";
       snapshot.files_lines.push_back(prefix + entry.path + (entry.is_directory ? "/" : ""));
     }
+    append_selected_file_preview(snapshot.files_lines, state, runtime);
   }
   snapshot.terminal_lines = lines_for_terminal(state, runtime);
   snapshot.search_lines = lines_for_search(files, caps);
@@ -926,7 +1041,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
   if (!runtime.market_entries.empty()) {
     snapshot.markets_lines = {
         "Watchlist entries: " + std::to_string(runtime.market_entries.size()),
-        "enter focus  j/k move  a add  x refresh",
+        "enter focus  j/k move  a add  d remove  x refresh",
     };
     for (std::size_t i = 0; i < runtime.market_entries.size() && i < 8; ++i) {
       const auto& market = runtime.market_entries[i];
@@ -991,8 +1106,8 @@ std::unique_ptr<Pane> make_static_pane(PaneKind kind,
                                        const WorkspacePersistentState& state,
                                        const WorkspaceRuntimeState& runtime,
                                        const EnvironmentCapabilities& caps) {
-  return std::make_unique<StaticPane>(
-      kind, to_string(kind), lines_for_pane(kind, snapshot), status_for_pane(kind, caps));
+  const auto title = kind == PaneKind::Portfolio ? std::string("Chart") : to_string(kind);
+  return std::make_unique<StaticPane>(kind, title, lines_for_pane(kind, snapshot), status_for_pane(kind, caps));
 }
 
 }  // namespace deck

@@ -9,8 +9,8 @@
 - inspect recent task output
 - search the workspace with `rg`
 - review Git status and diffs from inside the shell
-- navigate files and open them in `nvim`
-- manage a watchlist with local or Finnhub-backed quotes
+- navigate files and open them in Vim, Neovim, or VS Code
+- manage a watchlist with local CSV, Twelve Data candle history, or Finnhub quote fallback
 - ingest portfolio positions and balances from CSV
 - track threshold alerts
 - keep context-linked notes and a general scratchpad
@@ -31,7 +31,7 @@
 
 - directory-aware file list with keyboard navigation
 - `rg`-based search with in-app query entry
-- safe editor handoff into `nvim`
+- safe editor handoff into a selected Vim, Neovim, or VS Code
 - Git status, diff, stage, unstage, and commit actions
 - current branch and recent commit history alongside file/hunk review
 - inspect local branches and switch to or create branches from the command palette
@@ -41,10 +41,9 @@
 ### Finance workspace
 
 - watchlist discovery from `.deck/watchlist.txt`
-- quote refresh from local CSV data and optional Finnhub fallback
-- CSV ingestion for positions and balances
-- portfolio totals, cash, daily change, unrealized P/L, allocation mix, concentration, and basic movers
+- candle/quote refresh from local OHLC CSV data, Twelve Data, or optional Finnhub fallback
 - threshold alerts loaded from or written to `.deck/alerts.txt`
+- compact daily candlestick chart for the focused watchlist symbol
 
 ### Notes
 
@@ -90,6 +89,18 @@ or place it in `.env`:
 FINNHUB_API_KEY=your_key_here
 ```
 
+For daily OHLC candles, Twelve Data is preferred:
+
+```bash
+export TWELVE_DATA_API_KEY=your_key_here
+```
+
+Local OHLC CSV files work without an API key when they contain:
+
+```text
+symbol,date,open,high,low,close,volume
+```
+
 `deck doctor` reports whether the key was found and where it was discovered from, which is the quickest way to verify `.env` detection.
 
 Local quote CSVs can also provide prices without an API key. Example headers:
@@ -116,6 +127,8 @@ Common controls:
 
 - `:` open command palette
 - `:run <command>` run any workspace command (for example, `:run cmake --build build`)
+- `:editor vim`, `:editor nvim`, or `:editor vscode` choose the editor used when opening files (saved per workspace)
+- `,` open Settings to choose an editor and see whether it is available on `PATH`
 - `q` quit
 - `r` run recent command
 - `R` rerun latest task
@@ -134,6 +147,7 @@ Review controls:
 - `u` unstage selected file
 - `S` stage selected hunk from the current unstaged diff view
 - `U` unstage selected hunk from the current staged diff view
+- changed-file rows show their available `[s stage]` / `[u unstage]` actions
 - `[` and `]` move between hunks
 - `f` toggle the Review tab between changed-file review and the left Files pane
 - `:branch <name>` switch to an existing local branch
@@ -144,6 +158,7 @@ PTY-backed command tasks stream through the Logs pane as a single terminal-style
 Finance controls:
 
 - `a` add ticker to watchlist
+- `d` remove the selected ticker from the watchlist
 - `A` add alert rule
 - `e` edit note for selected symbol
 
@@ -155,6 +170,8 @@ Notes controls:
 - `Esc` stop editing
 
 The Notes tab contains the workspace Scratch pane. Existing saved workspaces are upgraded to include it automatically on the next launch.
+
+The Files pane shows a short text preview for the selected file. Binary files and files over 64 KiB are identified without loading their contents.
 
 ## Workspace files
 

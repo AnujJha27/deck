@@ -1,5 +1,8 @@
 #include "deck/panes.h"
 
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -104,4 +107,64 @@ DECK_TEST(build_patch_for_hunk_extracts_selected_hunk) {
   DECK_ASSERT(patch->find("diff --git a/src/app.cpp b/src/app.cpp") != std::string::npos);
   DECK_ASSERT(patch->find("@@ -40 +41,2 @@ more") != std::string::npos);
   DECK_ASSERT(patch->find("@@ -10,2 +10,3 @@ context") == std::string::npos);
+}
+
+DECK_TEST(file_browser_includes_selected_text_preview) {
+  const auto root = std::filesystem::temp_directory_path() / "deck_file_preview_test";
+  std::filesystem::create_directories(root);
+  {
+    std::ofstream output(root / "example.txt");
+    output << "first preview line\nsecond preview line\n";
+  }
+
+  auto state = deck::make_default_workspace(root);
+  deck::WorkspaceRuntimeState runtime;
+  runtime.files_entries = {{"example.txt", false}};
+  auto snapshot = deck::build_pane_data_snapshot(state, runtime, {});
+
+  DECK_ASSERT(std::find(snapshot.files_lines.begin(), snapshot.files_lines.end(), "Preview: example.txt") !=
+              snapshot.files_lines.end());
+  DECK_ASSERT(std::find(snapshot.files_lines.begin(), snapshot.files_lines.end(), "  first preview line") !=
+              snapshot.files_lines.end());
+
+  deck::invalidate_pane_data_snapshot(root);
+  std::filesystem::remove_all(root);
+}
+
+DECK_TEST(git_rows_show_inline_stage_and_unstage_actions) {
+  auto state = deck::make_default_workspace("/tmp/deck");
+  deck::WorkspaceRuntimeState runtime;
+  runtime.git_status_text = " M README.md\nM  src/app.cpp\n";
+  runtime.git_entries = {{"README.md", " ", "M"}, {"src/app.cpp", "M", " "}};
+  deck::EnvironmentCapabilities caps;
+  caps.git = true;
+  auto snapshot = deck::build_pane_data_snapshot(state, runtime, caps);
+
+  DECK_ASSERT(std::any_of(snapshot.git_lines.begin(), snapshot.git_lines.end(), [](const std::string& line) {
+    return line.find("README.md") != std::string::npos && line.find("[s stage]") != std::string::npos;
+  }));
+  DECK_ASSERT(std::any_of(snapshot.git_lines.begin(), snapshot.git_lines.end(), [](const std::string& line) {
+    return line.find("src/app.cpp") != std::string::npos && line.find("[u unstage]") != std::string::npos;
+  }));
+}
+
+DECK_TEST(finance_chart_renders_ohlc_candles) {
+  const auto root = std::filesystem::temp_directory_path() / "deck_candle_chart_test";
+  auto state = deck::make_default_workspace(root);
+  deck::WorkspaceRuntimeState runtime;
+  runtime.current_market_symbol = "TEST";
+  runtime.market_candles["TEST"] = {
+      {"2026-07-15", 10.0, 12.0, 9.0, 11.5, 1000.0},
+      {"2026-07-16", 11.5, 13.0, 10.5, 11.0, 1200.0},
+  };
+  const auto snapshot = deck::build_pane_data_snapshot(state, runtime, {});
+
+  DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
+    return line.find("TEST  ·  1D") != std::string::npos;
+  }));
+  DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
+    return line.find("2026-07-15") != std::string::npos && line.find("2026-07-16") != std::string::npos;
+  }));
+
+  deck::invalidate_pane_data_snapshot(root);
 }

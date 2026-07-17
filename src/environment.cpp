@@ -155,6 +155,9 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
   EnvironmentCapabilities caps;
   caps.git = executable_on_path("git");
   caps.rg = executable_on_path("rg");
+  caps.vim = executable_on_path("vim");
+  caps.nvim = executable_on_path("nvim");
+  caps.vscode = executable_on_path("code");
   caps.curl = executable_on_path("curl");
   caps.pdftotext = executable_on_path("pdftotext");
   caps.pdftoppm = executable_on_path("pdftoppm");
@@ -167,6 +170,10 @@ EnvironmentCapabilities detect_environment(const std::filesystem::path& root) {
     caps.finnhub_api_key = true;
     caps.finnhub_api_key_source = finnhub->source;
   }
+  if (auto twelve_data = resolve_env_var_details(root, "TWELVE_DATA_API_KEY")) {
+    caps.twelve_data_api_key = true;
+    caps.twelve_data_api_key_source = twelve_data->source;
+  }
   return caps;
 }
 
@@ -174,9 +181,14 @@ std::vector<std::string> render_doctor_report(const EnvironmentCapabilities& cap
   return {
       std::string("git: ") + (caps.git ? "ok" : "missing"),
       std::string("rg: ") + (caps.rg ? "ok" : "missing"),
+      std::string("vim: ") + (caps.vim ? "ok" : "missing"),
+      std::string("nvim: ") + (caps.nvim ? "ok" : "missing"),
+      std::string("vscode (code): ") + (caps.vscode ? "ok" : "missing"),
       std::string("curl: ") + (caps.curl ? "ok" : "missing"),
       std::string("finnhub_api_key: ") + (caps.finnhub_api_key ? "present" : "missing") +
           (caps.finnhub_api_key_source.empty() ? "" : " (" + caps.finnhub_api_key_source + ")"),
+      std::string("twelve_data_api_key: ") + (caps.twelve_data_api_key ? "present" : "missing") +
+          (caps.twelve_data_api_key_source.empty() ? "" : " (" + caps.twelve_data_api_key_source + ")"),
       std::string("pdftotext: ") + (caps.pdftotext ? "ok" : "missing"),
       std::string("pdftoppm: ") + (caps.pdftoppm ? "ok" : "missing"),
       std::string("kitty_graphics: ") + (caps.kitty_graphics ? "enabled" : "unavailable"),
