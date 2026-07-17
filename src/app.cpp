@@ -3106,6 +3106,9 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
               separator(),
               vbox(std::move(choices)),
               separator(),
+              text("Persisted task history: " + std::to_string(runtime_snapshot.task_history.size()) + " / 50") | dim,
+              text("c clear task history"),
+              separator(),
               text("j/k select   Enter save   Esc close"),
           }));
       content = dbox({
@@ -3481,6 +3484,19 @@ void launch_ftxui_shell(WorkspacePersistentState& state,
       }
       if (event == ftxui::Event::Character('k') || event == ftxui::Event::ArrowUp) {
         settings_overlay.selected_editor = std::max(settings_overlay.selected_editor - 1, 0);
+        return true;
+      }
+      if (event == ftxui::Event::Character('c')) {
+        WorkspaceStore store;
+        if (store.clear_tasks(state.root)) {
+          std::lock_guard<std::mutex> lock(controller.mutex);
+          controller.runtime.task_history.clear();
+          controller.runtime.selected_task_index = 0;
+          controller.runtime.status_message = "Task history cleared";
+        } else {
+          set_status(controller, "Failed to clear task history");
+        }
+        screen.PostEvent(ftxui::Event::Custom);
         return true;
       }
       if (event == ftxui::Event::Return) {

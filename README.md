@@ -133,6 +133,7 @@ Common controls:
 - `:run <command>` run any workspace command (for example, `:run cmake --build build`)
 - `:editor vim`, `:editor nvim`, or `:editor vscode` choose the editor used when opening files (saved per workspace)
 - `,` open Settings to choose an editor and see whether it is available on `PATH`
+- `c` inside Settings clears persisted task history
 - `q` quit
 - `r` run recent command
 - `R` rerun latest task
