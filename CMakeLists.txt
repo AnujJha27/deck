@@ -17,6 +17,7 @@ add_library(deck_core
   src/event_bus.cpp
   src/finance.cpp
   src/news.cpp
+  src/notes.cpp
   src/persistence.cpp
   src/picker.cpp
   src/panes.cpp
