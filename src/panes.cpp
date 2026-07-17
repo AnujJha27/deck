@@ -67,18 +67,26 @@ std::vector<std::string> wrapped_lines(const std::string& text,
                                        std::size_t width = 72,
                                        std::size_t limit = 12) {
   std::vector<std::string> lines;
-  std::istringstream words(text);
-  std::string line;
-  std::string word;
-  while (words >> word && lines.size() < limit) {
-    if (!line.empty() && line.size() + word.size() + 1 > width) {
-      lines.push_back(std::move(line));
-      line.clear();
+  std::istringstream paragraphs(text);
+  for (std::string paragraph; std::getline(paragraphs, paragraph) && lines.size() < limit;) {
+    paragraph = trim(paragraph);
+    if (paragraph.empty()) {
+      if (!lines.empty() && !lines.back().empty()) lines.push_back({});
+      continue;
     }
-    if (!line.empty()) line.push_back(' ');
-    line += word;
+    std::istringstream words(paragraph);
+    std::string line;
+    std::string word;
+    while (words >> word && lines.size() < limit) {
+      if (!line.empty() && line.size() + word.size() + 1 > width) {
+        lines.push_back(std::move(line));
+        line.clear();
+      }
+      if (!line.empty()) line.push_back(' ');
+      line += word;
+    }
+    if (!line.empty() && lines.size() < limit) lines.push_back(std::move(line));
   }
-  if (!line.empty() && lines.size() < limit) lines.push_back(std::move(line));
   return lines;
 }
 
@@ -1050,8 +1058,9 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
     }
     if (runtime.selected_news_index < runtime.news_entries.size()) {
       const auto& selected = runtime.news_entries[runtime.selected_news_index];
-      snapshot.news_preview_lines = {selected.title, "source: " + selected.source,
-                                     "published: " + selected.published_at, selected.url};
+      snapshot.news_preview_lines = {selected.title,
+                                     "from " + selected.source + "  ·  " + selected.published_at,
+                                     selected.url};
       snapshot.news_preview_lines.push_back(runtime.news_preview_in_progress ? "status: fetching article preview" :
                                                                               "v fetch article text");
       auto preview = selected.summary;
@@ -1060,7 +1069,7 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
         preview = cached->second;
       }
       if (!preview.empty()) {
-        snapshot.news_preview_lines.push_back("Preview:");
+        snapshot.news_preview_lines.push_back("Reader view");
         const auto lines = wrapped_lines(preview, 72, 200);
         const auto max_start = lines.size() > 1 ? lines.size() - 1 : 0;
         const auto start = std::min(runtime.news_preview_scroll, max_start);

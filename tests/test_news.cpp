@@ -19,10 +19,11 @@ DECK_TEST(news_parser_reads_hits_and_falls_back_to_discussion_url) {
   DECK_ASSERT(entries[0].summary == "A useful text post & discussion");
 }
 
-DECK_TEST(article_preview_strips_scripts_tags_and_collapses_space) {
+DECK_TEST(article_preview_preserves_readable_sections_and_discards_boilerplate) {
   const auto text = deck::readable_article_text(
-      "<html><style>bad</style><body><h1>Title</h1><script>worse</script><p>Hello   world</p></body></html>");
-  DECK_ASSERT(text == "Title Hello world");
+      "<html><head><title>duplicate</title></head><header>menu</header><body><h1>Title</h1>"
+      "<p>Hello   world</p><h2>Details</h2><p>Useful article text.</p><footer>subscribe</footer></body></html>");
+  DECK_ASSERT(text == "# Title\n\nHello world\n\n## Details\n\nUseful article text.");
 }
 
 DECK_TEST(article_preview_rejects_local_or_non_https_urls) {

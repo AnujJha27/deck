@@ -3,6 +3,7 @@
 #include <cctype>
 #include <algorithm>
 #include <sstream>
+#include <string_view>
 
 namespace deck {
 namespace {
@@ -97,6 +98,84 @@ std::string without_block(std::string html, const std::string& tag) {
   return html;
 }
 
+void append_break(std::string& text, std::size_t count = 1) {
+  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) text.pop_back();
+  const auto existing = text.size() >= 2 && text.ends_with("\n\n") ? 2U :
+                        (!text.empty() && text.back() == '\n' ? 1U : 0U);
+  text.append(count > existing ? count - existing : 0, '\n');
+}
+
+std::string tag_name(std::string_view tag) {
+  std::size_t cursor = 0;
+  while (cursor < tag.size() && (std::isspace(static_cast<unsigned char>(tag[cursor])) || tag[cursor] == '/')) ++cursor;
+  const auto start = cursor;
+  while (cursor < tag.size() && std::isalnum(static_cast<unsigned char>(tag[cursor]))) ++cursor;
+  std::string name(tag.substr(start, cursor - start));
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return name;
+}
+
+bool is_skipped_tag(const std::string& tag) {
+  return tag == "script" || tag == "style" || tag == "head" || tag == "nav" || tag == "footer" ||
+         tag == "header" || tag == "aside" || tag == "form" || tag == "svg" || tag == "noscript" ||
+         tag == "iframe";
+}
+
+bool is_paragraph_tag(const std::string& tag) {
+  return tag == "p" || tag == "div" || tag == "article" || tag == "section" || tag == "main" ||
+         tag == "blockquote" || tag == "pre" || tag == "figure" || tag == "figcaption";
+}
+
+std::string decode_entities(std::string text) {
+  replace_all(text, "&nbsp;", " ");
+  replace_all(text, "&amp;", "&");
+  replace_all(text, "&lt;", "<");
+  replace_all(text, "&gt;", ">");
+  replace_all(text, "&quot;", "\"");
+  replace_all(text, "&#x27;", "'");
+  replace_all(text, "&#39;", "'");
+  return text;
+}
+
+std::string clean_reader_text(const std::string& text, std::size_t limit) {
+  std::istringstream input(decode_entities(text));
+  std::ostringstream output;
+  std::string line;
+  bool pending_blank = false;
+  while (std::getline(input, line)) {
+    std::ostringstream compact;
+    bool space = true;
+    for (unsigned char ch : line) {
+      if (std::isspace(ch)) {
+        if (!space) compact << ' ';
+        space = true;
+      } else {
+        compact << static_cast<char>(ch);
+        space = false;
+      }
+    }
+    auto cleaned = compact.str();
+    while (!cleaned.empty() && cleaned.back() == ' ') cleaned.pop_back();
+    if (cleaned.empty()) {
+      pending_blank = output.tellp() > 0;
+      continue;
+    }
+    if (output.tellp() > 0) output << (pending_blank ? "\n\n" : "\n");
+    output << cleaned;
+    pending_blank = false;
+    if (output.tellp() >= static_cast<std::streampos>(limit)) break;
+  }
+  auto result = output.str();
+  while (!result.empty() && std::isspace(static_cast<unsigned char>(result.back()))) result.pop_back();
+  if (result.size() > limit) {
+    result.resize(limit);
+    result += "…";
+  }
+  return result;
+}
+
 }  // namespace
 
 std::vector<NewsEntry> parse_hacker_news_response(const std::string& json,
@@ -120,42 +199,45 @@ std::vector<NewsEntry> parse_hacker_news_response(const std::string& json,
 }
 
 std::string readable_article_text(const std::string& source, std::size_t limit) {
-  auto html = without_block(without_block(source, "script"), "style");
+  auto html = source;
   std::string text;
   text.reserve(std::min(html.size(), limit));
-  bool in_tag = false;
-  for (char ch : html) {
-    if (ch == '<') {
-      in_tag = true;
-      if (!text.empty() && !std::isspace(static_cast<unsigned char>(text.back()))) text.push_back(' ');
-    } else if (ch == '>') {
-      in_tag = false;
-    } else if (!in_tag) {
-      text.push_back(ch);
+  std::size_t cursor = 0;
+  int skipped_depth = 0;
+  while (cursor < html.size()) {
+    if (html[cursor] != '<') {
+      if (skipped_depth == 0) text.push_back(html[cursor]);
+      ++cursor;
+      continue;
     }
-  }
-  replace_all(text, "&amp;", "&");
-  replace_all(text, "&lt;", "<");
-  replace_all(text, "&gt;", ">");
-  replace_all(text, "&quot;", "\"");
-  replace_all(text, "&#x27;", "'");
-  replace_all(text, "&#39;", "'");
-  std::ostringstream cleaned;
-  bool space = true;
-  for (unsigned char ch : text) {
-    if (std::isspace(ch)) {
-      if (!space) cleaned << ' ';
-      space = true;
-    } else {
-      cleaned << static_cast<char>(ch);
-      space = false;
+    const auto end = html.find('>', cursor + 1);
+    if (end == std::string::npos) break;
+    const std::string_view raw_tag(html.data() + cursor + 1, end - cursor - 1);
+    const bool closing = !raw_tag.empty() && raw_tag.front() == '/';
+    const auto tag = tag_name(raw_tag);
+    if (is_skipped_tag(tag)) {
+      if (closing && skipped_depth > 0) --skipped_depth;
+      else if (!closing) ++skipped_depth;
+      cursor = end + 1;
+      continue;
     }
-    if (cleaned.tellp() >= static_cast<std::streampos>(limit)) break;
+    if (skipped_depth == 0) {
+      if (tag == "br") {
+        append_break(text);
+      } else if (!closing && (tag == "h1" || tag == "h2" || tag == "h3" || tag == "h4")) {
+        append_break(text, 2);
+        text.append(tag == "h1" ? "# " : tag == "h2" ? "## " : "### ");
+      } else if (!closing && tag == "li") {
+        append_break(text);
+        text += "• ";
+      } else if (is_paragraph_tag(tag) || closing && (tag == "li" || tag == "h1" || tag == "h2" ||
+                                                      tag == "h3" || tag == "h4")) {
+        append_break(text, 2);
+      }
+    }
+    cursor = end + 1;
   }
-  auto result = cleaned.str();
-  while (!result.empty() && result.back() == ' ') result.pop_back();
-  if (result.size() == limit) result += "…";
-  return result;
+  return clean_reader_text(text, limit);
 }
 
 bool safe_article_url(const std::string& url) {
