@@ -3,7 +3,10 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <cstdlib>
+#include <regex>
 #include <string>
 
 namespace deck {
@@ -87,6 +90,18 @@ bool WorkspaceStore::ensure_schema(void* db_handle) const {
               "  command_text TEXT NOT NULL,"
               "  PRIMARY KEY(workspace_root, command_order)"
               ");"
+              "CREATE TABLE IF NOT EXISTS task_history("
+              "  workspace_root TEXT NOT NULL, task_order INTEGER NOT NULL, name TEXT NOT NULL,"
+              "  command_text TEXT NOT NULL, use_pty INTEGER NOT NULL, state TEXT NOT NULL,"
+              "  exit_code INTEGER NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL,"
+              "  stdout_excerpt TEXT NOT NULL, stderr_excerpt TEXT NOT NULL,"
+              "  timed_out INTEGER NOT NULL, cancelled INTEGER NOT NULL,"
+              "  PRIMARY KEY(workspace_root, task_order)"
+              ");"
+              "CREATE TABLE IF NOT EXISTS task_argv("
+              "  workspace_root TEXT NOT NULL, task_order INTEGER NOT NULL, arg_order INTEGER NOT NULL,"
+              "  arg_text TEXT NOT NULL, PRIMARY KEY(workspace_root, task_order, arg_order)"
+              ");"
               "CREATE TABLE IF NOT EXISTS papers("
               "  workspace_root TEXT NOT NULL,"
               "  paper_id TEXT NOT NULL,"
@@ -124,6 +139,32 @@ bool WorkspaceStore::ensure_schema(void* db_handle) const {
     return false;
   }
   return true;
+}
+
+std::string redact_sensitive_text(std::string text) {
+  static const std::regex header(
+      R"((authorization\s*:\s*)(bearer\s+)?[^\s]+)", std::regex_constants::icase);
+  static const std::regex assignment(
+      R"(((api[_-]?key|token|secret|password)\s*[=:]\s*)[^\s,;]+)", std::regex_constants::icase);
+  text = std::regex_replace(text, header, "$1[redacted]");
+  text = std::regex_replace(text, assignment, "$1[redacted]");
+  for (const char* name : {"FINNHUB_API_KEY", "TWELVE_DATA_API_KEY", "API_KEY", "ACCESS_TOKEN"}) {
+    if (const char* value = std::getenv(name); value != nullptr && *value != '\0') {
+      std::string secret(value);
+      for (auto at = text.find(secret); at != std::string::npos; at = text.find(secret, at + 10)) {
+        text.replace(at, secret.size(), "[redacted]");
+      }
+    }
+  }
+  return text;
+}
+
+bool task_argv_is_sensitive(const std::vector<std::string>& argv) {
+  static const std::regex sensitive(
+      R"((authorization|api[_-]?key|token|secret|password))", std::regex_constants::icase);
+  return std::any_of(argv.begin(), argv.end(), [](const std::string& arg) {
+    return std::regex_search(arg, sensitive);
+  });
 }
 
 std::optional<WorkspacePersistentState> WorkspaceStore::load(const std::filesystem::path& root) const {
@@ -321,6 +362,119 @@ bool WorkspaceStore::reset_layout(const std::filesystem::path& root) const {
   std::filesystem::remove(database_file_for(root), ec);
   std::filesystem::remove(state_file_for(root), ec);
   return !ec;
+}
+
+std::vector<TaskRecord> WorkspaceStore::load_tasks(const std::filesystem::path& root) const {
+  SqliteDb db(database_file_for(root));
+  if (!db || !ensure_schema(db.get())) {
+    return {};
+  }
+  std::vector<TaskRecord> tasks;
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db.get(),
+                     "SELECT task_order,name,command_text,use_pty,state,exit_code,started_at,finished_at,"
+                     "stdout_excerpt,stderr_excerpt,timed_out,cancelled FROM task_history "
+                     "WHERE workspace_root=?1 ORDER BY task_order",
+                     -1, &stmt, nullptr);
+  bind_text(stmt, 1, root.string());
+  std::vector<int> orders;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    TaskRecord task;
+    orders.push_back(sqlite3_column_int(stmt, 0));
+    task.name = column_text(stmt, 1).value_or("");
+    task.command = column_text(stmt, 2).value_or("");
+    task.use_pty = sqlite3_column_int(stmt, 3) != 0;
+    const auto state = column_text(stmt, 4).value_or("failed");
+    if (state == "exited") task.state = TaskState::Exited;
+    else if (state == "cancelled") task.state = TaskState::Cancelled;
+    else task.state = TaskState::Failed;
+    task.exit_code = sqlite3_column_int(stmt, 5);
+    task.started_at = column_text(stmt, 6).value_or("");
+    task.finished_at = column_text(stmt, 7).value_or("");
+    task.stdout_excerpt = column_text(stmt, 8).value_or("");
+    task.stderr_excerpt = column_text(stmt, 9).value_or("");
+    task.timed_out = sqlite3_column_int(stmt, 10) != 0;
+    task.cancelled = sqlite3_column_int(stmt, 11) != 0;
+    tasks.push_back(std::move(task));
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_stmt* argv_stmt = nullptr;
+  sqlite3_prepare_v2(db.get(),
+                     "SELECT arg_text FROM task_argv WHERE workspace_root=?1 AND task_order=?2 "
+                     "ORDER BY arg_order", -1, &argv_stmt, nullptr);
+  for (std::size_t i = 0; i < tasks.size(); ++i) {
+    sqlite3_reset(argv_stmt);
+    sqlite3_clear_bindings(argv_stmt);
+    bind_text(argv_stmt, 1, root.string());
+    sqlite3_bind_int(argv_stmt, 2, orders[i]);
+    while (sqlite3_step(argv_stmt) == SQLITE_ROW) {
+      tasks[i].argv.push_back(column_text(argv_stmt, 0).value_or(""));
+    }
+  }
+  sqlite3_finalize(argv_stmt);
+  return tasks;
+}
+
+bool WorkspaceStore::save_tasks(const std::filesystem::path& root,
+                                const std::vector<TaskRecord>& tasks) const {
+  std::error_code ec;
+  std::filesystem::create_directories(config_dir_for(root), ec);
+  SqliteDb db(database_file_for(root));
+  if (ec || !db || !ensure_schema(db.get()) || !exec(db.get(), "BEGIN;")) {
+    return false;
+  }
+  sqlite3_stmt* clear = nullptr;
+  sqlite3_prepare_v2(db.get(), "DELETE FROM task_argv WHERE workspace_root=?1", -1, &clear, nullptr);
+  bind_text(clear, 1, root.string()); sqlite3_step(clear); sqlite3_finalize(clear);
+  sqlite3_prepare_v2(db.get(), "DELETE FROM task_history WHERE workspace_root=?1", -1, &clear, nullptr);
+  bind_text(clear, 1, root.string()); sqlite3_step(clear); sqlite3_finalize(clear);
+
+  sqlite3_stmt* task_stmt = nullptr;
+  sqlite3_prepare_v2(db.get(),
+                     "INSERT INTO task_history VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                     -1, &task_stmt, nullptr);
+  sqlite3_stmt* arg_stmt = nullptr;
+  sqlite3_prepare_v2(db.get(), "INSERT INTO task_argv VALUES(?1,?2,?3,?4)", -1, &arg_stmt, nullptr);
+  const auto begin = tasks.size() > 50 ? tasks.size() - 50 : 0;
+  for (std::size_t source = begin, order = 0; source < tasks.size(); ++source, ++order) {
+    auto task = tasks[source];
+    const bool sensitive = task_argv_is_sensitive(task.argv);
+    if (sensitive) {
+      task.command = "[sensitive command omitted]";
+    }
+    task.stdout_excerpt = redact_sensitive_text(task.stdout_excerpt);
+    task.stderr_excerpt = redact_sensitive_text(task.stderr_excerpt);
+    if (task.stdout_excerpt.size() > 4096) task.stdout_excerpt.erase(0, task.stdout_excerpt.size() - 4096);
+    if (task.stderr_excerpt.size() > 4096) task.stderr_excerpt.erase(0, task.stderr_excerpt.size() - 4096);
+    sqlite3_reset(task_stmt); sqlite3_clear_bindings(task_stmt);
+    bind_text(task_stmt, 1, root.string()); sqlite3_bind_int(task_stmt, 2, static_cast<int>(order));
+    bind_text(task_stmt, 3, task.name); bind_text(task_stmt, 4, task.command);
+    sqlite3_bind_int(task_stmt, 5, task.use_pty); bind_text(task_stmt, 6, to_string(task.state));
+    sqlite3_bind_int(task_stmt, 7, task.exit_code); bind_text(task_stmt, 8, task.started_at);
+    bind_text(task_stmt, 9, task.finished_at); bind_text(task_stmt, 10, task.stdout_excerpt);
+    bind_text(task_stmt, 11, task.stderr_excerpt); sqlite3_bind_int(task_stmt, 12, task.timed_out);
+    sqlite3_bind_int(task_stmt, 13, task.cancelled);
+    if (sqlite3_step(task_stmt) != SQLITE_DONE) {
+      sqlite3_finalize(task_stmt); sqlite3_finalize(arg_stmt); exec(db.get(), "ROLLBACK;"); return false;
+    }
+    if (!sensitive) {
+      for (std::size_t arg = 0; arg < task.argv.size(); ++arg) {
+        sqlite3_reset(arg_stmt); sqlite3_clear_bindings(arg_stmt);
+        bind_text(arg_stmt, 1, root.string()); sqlite3_bind_int(arg_stmt, 2, static_cast<int>(order));
+        sqlite3_bind_int(arg_stmt, 3, static_cast<int>(arg)); bind_text(arg_stmt, 4, task.argv[arg]);
+        if (sqlite3_step(arg_stmt) != SQLITE_DONE) {
+          sqlite3_finalize(task_stmt); sqlite3_finalize(arg_stmt); exec(db.get(), "ROLLBACK;"); return false;
+        }
+      }
+    }
+  }
+  sqlite3_finalize(task_stmt);
+  sqlite3_finalize(arg_stmt);
+  return exec(db.get(), "COMMIT;");
+}
+
+bool WorkspaceStore::clear_tasks(const std::filesystem::path& root) const {
+  return save_tasks(root, {});
 }
 
 std::vector<PaperRecord> WorkspaceStore::load_papers(const std::filesystem::path& root) const {

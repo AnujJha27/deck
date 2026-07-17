@@ -47,6 +47,7 @@ if(BUILD_TESTING)
     tests/test_panes.cpp
     tests/test_paper_anchor.cpp
     tests/test_picker.cpp
+    tests/test_persistence.cpp
   )
   target_link_libraries(deck_tests PRIVATE deck_core)
   add_test(NAME deck_tests COMMAND deck_tests)

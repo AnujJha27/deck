@@ -321,7 +321,7 @@ bool open_in_configured_editor(ScreenInteractive& screen,
   return true;
 }
 
-void append_tail(std::string& target, const std::string& chunk, std::size_t limit = 400) {
+void append_tail(std::string& target, const std::string& chunk, std::size_t limit = 4096) {
   target.append(chunk);
   if (target.size() > limit) {
     target.erase(0, target.size() - limit);
@@ -1947,6 +1947,7 @@ std::vector<std::string> palette_suggestions_for(TabRole role) {
       "branch <name>",
       "branch-new <name>",
       "editor <vim|nvim|vscode>",
+      "clear-tasks",
       "cancel",
       "quit",
   };
@@ -2065,6 +2066,7 @@ void launch_task(ScreenInteractive& screen,
             .should_cancel = [&] { return controller.cancel_requested.load(); },
         });
 
+    std::vector<TaskRecord> persisted_tasks;
     {
       std::lock_guard<std::mutex> lock(controller.mutex);
       auto& task = controller.runtime.task_history[task_index];
@@ -2083,7 +2085,9 @@ void launch_task(ScreenInteractive& screen,
         controller.runtime.active_task_state = TaskState::Exited;
       }
       controller.active_task_index.reset();
+      persisted_tasks = controller.runtime.task_history;
     }
+    WorkspaceStore{}.save_tasks(persistent.root, persisted_tasks);
     refresh_git_state(controller, persistent, caps);
     invalidate_pane_data_snapshot(persistent.root);
     controller.task_running = false;
@@ -2301,6 +2305,19 @@ bool execute_palette_command(ScreenInteractive& screen,
   }();
 
   const auto command = argv.front();
+  if (command == "clear-tasks") {
+    WorkspaceStore store;
+    if (store.clear_tasks(state.root)) {
+      std::lock_guard<std::mutex> lock(controller.mutex);
+      controller.runtime.task_history.clear();
+      controller.runtime.selected_task_index = 0;
+      controller.runtime.status_message = "Task history cleared";
+    } else {
+      set_status(controller, "Failed to clear task history");
+    }
+    screen.PostEvent(ftxui::Event::Custom);
+    return true;
+  }
   if (command == "editor") {
     if (argv.size() != 2 || (argv[1] != "vim" && argv[1] != "nvim" && argv[1] != "vscode")) {
       set_status(controller, "Usage: editor <vim|nvim|vscode>");
@@ -4101,6 +4118,10 @@ int run_app(const CliOptions& options) {
   WorkspaceRuntimeState runtime;
   runtime.overlays_enabled = !options.safe_mode;
   bootstrap_runtime_state(persistent, caps, options.safe_mode, runtime);
+  if (!options.safe_mode) {
+    runtime.task_history = store.load_tasks(root);
+    runtime.selected_task_index = runtime.task_history.empty() ? 0 : runtime.task_history.size() - 1;
+  }
 
   if (options.safe_mode) {
     render_safe_summary(persistent, runtime, caps);

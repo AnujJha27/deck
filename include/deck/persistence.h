@@ -31,9 +31,15 @@ class WorkspaceStore {
   bool reset_layout(const std::filesystem::path& root) const;
   std::vector<PaperRecord> load_papers(const std::filesystem::path& root) const;
   bool save_paper(const std::filesystem::path& root, const PaperRecord& paper) const;
+  std::vector<TaskRecord> load_tasks(const std::filesystem::path& root) const;
+  bool save_tasks(const std::filesystem::path& root, const std::vector<TaskRecord>& tasks) const;
+  bool clear_tasks(const std::filesystem::path& root) const;
 
  private:
   bool ensure_schema(void* db_handle) const;
 };
+
+std::string redact_sensitive_text(std::string text);
+bool task_argv_is_sensitive(const std::vector<std::string>& argv);
 
 }  // namespace deck
