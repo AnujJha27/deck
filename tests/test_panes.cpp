@@ -165,6 +165,10 @@ DECK_TEST(finance_chart_renders_ohlc_candles) {
   DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
     return line.find("2026-07-15") != std::string::npos && line.find("2026-07-16") != std::string::npos;
   }));
+  DECK_ASSERT(snapshot.portfolio_lines.size() > 2);
+  DECK_ASSERT(snapshot.portfolio_lines[1].find("│ ") == std::string::npos);
+  DECK_ASSERT(snapshot.portfolio_lines[1].find("█ ") == std::string::npos);
+  DECK_ASSERT(snapshot.portfolio_lines[1].find("▓ ") == std::string::npos);
 
   deck::invalidate_pane_data_snapshot(root);
 }

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -611,13 +612,18 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
   const auto& all_candles = found->second;
   const auto begin = all_candles.size() > max_candles ? all_candles.size() - max_candles : 0;
   std::vector<MarketCandle> candles(all_candles.begin() + static_cast<std::ptrdiff_t>(begin), all_candles.end());
-  double chart_high = candles.front().high;
-  double chart_low = candles.front().low;
+  double observed_high = candles.front().high;
+  double observed_low = candles.front().low;
   for (const auto& candle : candles) {
-    chart_high = std::max(chart_high, candle.high);
-    chart_low = std::min(chart_low, candle.low);
+    observed_high = std::max(observed_high, candle.high);
+    observed_low = std::min(observed_low, candle.low);
   }
-  const auto range = std::max(chart_high - chart_low, 0.000001);
+  const auto observed_range = observed_high - observed_low;
+  const auto scale = std::max(observed_range, std::max(std::abs(observed_high), 1.0) * 0.01);
+  const auto padding = scale * 0.12;
+  const auto chart_high = observed_high + padding;
+  const auto chart_low = observed_low - padding;
+  const auto range = chart_high - chart_low;
   const auto row_for = [&](double value) {
     const auto normalized = (chart_high - value) / range;
     return static_cast<std::size_t>(std::clamp(normalized * (chart_height - 1), 0.0, chart_height - 1.0));

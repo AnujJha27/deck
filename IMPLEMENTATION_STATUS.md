@@ -66,6 +66,7 @@ Last updated: 2026-07-17
 - Git and Diff panes now support file-level staging, selected-hunk stage/unstage, selected-file diff inspection, commit submission, and local branch switching/creation, but not remote branch management.
 - The typed command palette and fuzzy quick picker coexist; richer per-item previews remain future work.
 - Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, allocation/concentration analytics, and threshold alerts.
+- Candle charts reserve vertical headroom so extreme session wicks remain visibly separated from pane borders.
 - The shell has multi-tab structure and persistence, but tab-local interactivity remains thin.
 
 ## Known issues
