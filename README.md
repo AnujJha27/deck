@@ -168,6 +168,8 @@ Finance controls:
 - `A` add alert rule
 - `e` edit note for selected symbol
 
+The Finance candle chart adapts its height and displayed candle count to the terminal size, so larger terminals use the available pane space.
+
 Notes controls:
 
 - `E` edit current context note

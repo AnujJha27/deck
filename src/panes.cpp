@@ -6,6 +6,7 @@
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/screen/terminal.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -615,8 +616,9 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
     };
   }
 
-  constexpr std::size_t chart_height = 12;
-  constexpr std::size_t max_candles = 24;
+  const auto terminal = ftxui::Terminal::Size();
+  const auto chart_height = candle_chart_height_for_terminal_rows(terminal.dimy);
+  const auto max_candles = candle_chart_capacity_for_terminal_columns(terminal.dimx);
   const auto& all_candles = found->second;
   const auto begin = all_candles.size() > max_candles ? all_candles.size() - max_candles : 0;
   std::vector<MarketCandle> candles(all_candles.begin() + static_cast<std::ptrdiff_t>(begin), all_candles.end());
@@ -628,7 +630,7 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
   }
   const auto observed_range = observed_high - observed_low;
   const auto scale = std::max(observed_range, std::max(std::abs(observed_high), 1.0) * 0.01);
-  const auto padding = scale * 0.12;
+  const auto padding = scale * 0.15;
   const auto chart_high = observed_high + padding;
   const auto chart_low = observed_low - padding;
   const auto range = chart_high - chart_low;
@@ -1272,6 +1274,22 @@ std::vector<DiffHunk> parse_diff_hunks(const std::string& text) {
 
 std::optional<std::string> build_patch_for_hunk(const std::string& diff_text, std::size_t hunk_index) {
   return build_patch_for_hunk_impl(diff_text, hunk_index);
+}
+
+std::size_t candle_chart_height_for_terminal_rows(int terminal_rows) {
+  constexpr std::size_t min_height = 10;
+  constexpr std::size_t max_height = 42;
+  const auto shell_rows = std::max(terminal_rows - 7, 0);
+  const auto chart_pane_rows = static_cast<std::size_t>(shell_rows * 72 / 100);
+  return std::clamp(chart_pane_rows > 6 ? chart_pane_rows - 6 : std::size_t{0}, min_height, max_height);
+}
+
+std::size_t candle_chart_capacity_for_terminal_columns(int terminal_columns) {
+  constexpr std::size_t min_candles = 12;
+  constexpr std::size_t max_candles = 90;
+  const auto finance_rows_width = std::max(terminal_columns * 78 / 100 - 14, 0);
+  const auto capacity = static_cast<std::size_t>(finance_rows_width / 2);
+  return std::clamp(capacity, min_candles, max_candles);
 }
 
 std::unique_ptr<Pane> make_static_pane(PaneKind kind,

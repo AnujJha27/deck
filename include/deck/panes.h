@@ -36,6 +36,8 @@ std::vector<GitStatusEntry> parse_git_status_entries(const std::string& text);
 std::vector<GitBranchEntry> parse_git_branch_entries(const std::string& text);
 std::vector<DiffHunk> parse_diff_hunks(const std::string& text);
 std::optional<std::string> build_patch_for_hunk(const std::string& diff_text, std::size_t hunk_index);
+std::size_t candle_chart_height_for_terminal_rows(int terminal_rows);
+std::size_t candle_chart_capacity_for_terminal_columns(int terminal_columns);
 
 std::unique_ptr<Pane> make_static_pane(PaneKind kind,
                                        const PaneDataSnapshot& snapshot,

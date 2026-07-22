@@ -173,6 +173,17 @@ DECK_TEST(finance_chart_renders_ohlc_candles) {
   deck::invalidate_pane_data_snapshot(root);
 }
 
+DECK_TEST(candle_chart_uses_terminal_relative_dimensions) {
+  DECK_ASSERT(deck::candle_chart_height_for_terminal_rows(30) == 10);
+  DECK_ASSERT(deck::candle_chart_height_for_terminal_rows(70) >
+              deck::candle_chart_height_for_terminal_rows(30));
+  DECK_ASSERT(deck::candle_chart_height_for_terminal_rows(200) == 42);
+  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(90) == 28);
+  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(220) >
+              deck::candle_chart_capacity_for_terminal_columns(90));
+  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(500) == 90);
+}
+
 DECK_TEST(news_preview_scrolls_through_long_article_text) {
   const auto root = std::filesystem::temp_directory_path() / "deck_news_scroll_test";
   auto state = deck::make_default_workspace(root);
