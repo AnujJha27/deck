@@ -200,7 +200,10 @@ DECK_TEST(finance_chart_renders_ohlc_candles) {
     return line.find("Period") != std::string::npos && line.find("9.00") != std::string::npos;
   }));
   DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
-    return line.find("RECENT SESSIONS") != std::string::npos;
+    return line.find("VOLUME PROFILE") != std::string::npos;
+  }));
+  DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
+    return line.find("▇") != std::string::npos;
   }));
 
   deck::invalidate_pane_data_snapshot(root);

@@ -168,7 +168,7 @@ Finance controls:
 - `A` add alert rule
 - `e` edit note for selected symbol
 
-The Finance candle pane uses a responsive two-column layout: candles expand within the left column, while the right column combines a focused market snapshot with a recent-sessions table.
+The Finance candle pane uses a responsive two-column layout: candles expand within the left column, while the right column combines a focused market snapshot with a relative-volume chart.
 
 Notes controls:
 

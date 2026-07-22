@@ -72,7 +72,7 @@ Last updated: 2026-07-17
 - Finance panes now include quote refresh, CSV ingestion, portfolio summary metrics, allocation/concentration analytics, and threshold alerts.
 - Candle charts reserve vertical headroom so extreme session wicks remain visibly separated from pane borders.
 - Finance charts scale their height and candle capacity with the terminal viewport instead of using fixed dimensions.
-- Finance candle panes use both columns: an expanding chart plus market snapshot and recent-session detail.
+- Finance candle panes use both columns: an expanding price chart plus market snapshot and relative-volume chart.
 - The shell has multi-tab structure and persistence, but tab-local interactivity remains thin.
 
 ## Known issues

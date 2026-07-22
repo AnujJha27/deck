@@ -767,15 +767,22 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
   if (alert != runtime.triggered_alerts.end()) {
     snapshot.push_back("Alert    " + alert->message.substr(0, 56));
   }
+  while (snapshot.size() + 3 > chart_height && snapshot.size() > 5) snapshot.pop_back();
   snapshot.push_back({});
-  snapshot.push_back("RECENT SESSIONS");
-  const auto recent_count = std::min<std::size_t>(chart_height > snapshot.size() ? chart_height - snapshot.size() : 0,
+  snapshot.push_back("VOLUME PROFILE");
+  const auto maximum_volume = std::max_element(candles.begin(), candles.end(), [](const auto& lhs, const auto& rhs) {
+    return lhs.volume < rhs.volume;
+  })->volume;
+  const auto volume_count = std::min<std::size_t>(chart_height > snapshot.size() ? chart_height - snapshot.size() : 0,
                                                    std::min<std::size_t>(candles.size(), 14));
-  for (std::size_t offset = recent_count; offset > 0; --offset) {
+  for (std::size_t offset = volume_count; offset > 0; --offset) {
     const auto& candle = candles[candles.size() - offset];
-    const auto move_percent = candle.open == 0.0 ? 0.0 : (candle.close - candle.open) * 100.0 / candle.open;
-    snapshot.push_back(candle.datetime + "  " + (move_percent >= 0.0 ? "+" : "") +
-                       number(move_percent) + "%  C " + number(candle.close));
+    const auto bar_width = maximum_volume <= 0.0
+                               ? 0U
+                               : static_cast<unsigned>(std::clamp(candle.volume * 18.0 / maximum_volume, 1.0, 18.0));
+    std::string bar;
+    for (unsigned index = 0; index < bar_width; ++index) bar += "▇";
+    snapshot.push_back(candle.datetime + "  " + bar + " " + number(candle.volume, 0));
   }
   const auto finance_pane_width = std::max(terminal.dimx * 78 / 100, 0);
   const auto chart_column_width = std::max(finance_pane_width / 2 - 12, 24);
