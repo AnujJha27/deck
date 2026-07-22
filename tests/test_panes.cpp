@@ -199,6 +199,9 @@ DECK_TEST(finance_chart_renders_ohlc_candles) {
   DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
     return line.find("Period") != std::string::npos && line.find("9.00") != std::string::npos;
   }));
+  DECK_ASSERT(std::any_of(snapshot.portfolio_lines.begin(), snapshot.portfolio_lines.end(), [](const std::string& line) {
+    return line.find("RECENT SESSIONS") != std::string::npos;
+  }));
 
   deck::invalidate_pane_data_snapshot(root);
 }
@@ -208,10 +211,10 @@ DECK_TEST(candle_chart_uses_terminal_relative_dimensions) {
   DECK_ASSERT(deck::candle_chart_height_for_terminal_rows(70) >
               deck::candle_chart_height_for_terminal_rows(30));
   DECK_ASSERT(deck::candle_chart_height_for_terminal_rows(200) == 42);
-  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(90) == 28);
+  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(90) == 12);
   DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(220) >
               deck::candle_chart_capacity_for_terminal_columns(90));
-  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(500) == 90);
+  DECK_ASSERT(deck::candle_chart_capacity_for_terminal_columns(500) == 60);
 }
 
 DECK_TEST(news_preview_scrolls_through_long_article_text) {

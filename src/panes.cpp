@@ -767,6 +767,19 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
   if (alert != runtime.triggered_alerts.end()) {
     snapshot.push_back("Alert    " + alert->message.substr(0, 56));
   }
+  snapshot.push_back({});
+  snapshot.push_back("RECENT SESSIONS");
+  const auto recent_count = std::min<std::size_t>(chart_height > snapshot.size() ? chart_height - snapshot.size() : 0,
+                                                   std::min<std::size_t>(candles.size(), 14));
+  for (std::size_t offset = recent_count; offset > 0; --offset) {
+    const auto& candle = candles[candles.size() - offset];
+    const auto move_percent = candle.open == 0.0 ? 0.0 : (candle.close - candle.open) * 100.0 / candle.open;
+    snapshot.push_back(candle.datetime + "  " + (move_percent >= 0.0 ? "+" : "") +
+                       number(move_percent) + "%  C " + number(candle.close));
+  }
+  const auto finance_pane_width = std::max(terminal.dimx * 78 / 100, 0);
+  const auto chart_column_width = std::max(finance_pane_width / 2 - 12, 24);
+  const auto candle_stride = std::clamp(chart_column_width / static_cast<int>(candles.size()), 2, 4);
   std::ostringstream heading;
   heading << symbol << "  ·  1D  ·  " << candles.size() << " sessions   O " << std::fixed << std::setprecision(2)
           << last.open << "  H " << last.high << "  L " << last.low << "  C " << last.close;
@@ -788,18 +801,18 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
       const auto body_top = std::min(open_row, close_row);
       const auto body_bottom = std::max(open_row, close_row);
       if (row >= body_top && row <= body_bottom) {
-        chart_row << (candle.close >= candle.open ? "█ " : "▓ ");
+        chart_row << (candle.close >= candle.open ? "█" : "▓") << std::string(candle_stride - 1, ' ');
       } else if (row >= high_row && row <= low_row) {
-        chart_row << "│ ";
+        chart_row << "│" << std::string(candle_stride - 1, ' ');
       } else {
-        chart_row << "  ";
+        chart_row << std::string(candle_stride, ' ');
       }
     }
     chart_row << "  │  ";
     if (row < snapshot.size()) chart_row << snapshot[row];
     lines.push_back(chart_row.str());
   }
-  lines.push_back("          └" + std::string(candles.size() * 2, '-'));
+  lines.push_back("          └" + std::string(candles.size() * candle_stride, '-'));
   lines.push_back("           " + candles.front().datetime + "  →  " + candles.back().datetime);
   lines.push_back("           █ up/open-close   ▓ down/open-close   │ wick");
   return lines;
@@ -1455,9 +1468,10 @@ std::size_t candle_chart_height_for_terminal_rows(int terminal_rows) {
 
 std::size_t candle_chart_capacity_for_terminal_columns(int terminal_columns) {
   constexpr std::size_t min_candles = 12;
-  constexpr std::size_t max_candles = 90;
-  const auto finance_rows_width = std::max(terminal_columns * 78 / 100 - 14, 0);
-  const auto capacity = static_cast<std::size_t>(finance_rows_width / 2);
+  constexpr std::size_t max_candles = 60;
+  const auto finance_pane_width = std::max(terminal_columns * 78 / 100, 0);
+  const auto chart_column_width = std::max(finance_pane_width / 2 - 14, 0);
+  const auto capacity = static_cast<std::size_t>(chart_column_width / 2);
   return std::clamp(capacity, min_candles, max_candles);
 }
 
