@@ -1,3 +1,4 @@
+#include "deck/app_support.h"
 #include "deck/process.h"
 
 #include <chrono>
@@ -83,4 +84,13 @@ DECK_TEST(process_runner_cancels_pty_tasks) {
 
   DECK_ASSERT(result.cancelled);
   DECK_ASSERT(result.exit_code == 130);
+}
+
+DECK_TEST(app_support_splits_quoted_commands_and_bounds_output) {
+  const auto argv = deck::split_command_line("git commit -m \"calm checkpoint\"");
+  DECK_ASSERT(argv.size() == 4);
+  DECK_ASSERT(argv[3] == "calm checkpoint");
+  std::string output = "old";
+  deck::append_tail(output, "-new", 5);
+  DECK_ASSERT(output == "d-new");
 }

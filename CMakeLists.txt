@@ -12,6 +12,7 @@ find_package(SQLite3 REQUIRED)
 
 add_library(deck_core
   src/app.cpp
+  src/app_support.cpp
   src/cli.cpp
   src/environment.cpp
   src/event_bus.cpp

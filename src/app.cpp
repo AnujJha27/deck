@@ -1,5 +1,7 @@
 #include "deck/app.h"
 
+#include "deck/app_support.h"
+
 #include "deck/environment.h"
 #include "deck/event_bus.h"
 #include "deck/finance.h"
@@ -37,57 +39,6 @@
 namespace deck {
 namespace {
 using namespace ftxui;
-
-std::string wrap_text(const std::string& text, std::size_t width = 64) {
-  std::istringstream in(text);
-  std::ostringstream out;
-  std::string word;
-  std::size_t line = 0;
-  while (in >> word) {
-    if (line != 0 && line + word.size() + 1 > width) {
-      out << "\n";
-      line = 0;
-    }
-    if (line != 0) {
-      out << " ";
-      ++line;
-    }
-    out << word;
-    line += word.size();
-  }
-  return out.str();
-}
-
-std::string format_timestamp(std::chrono::system_clock::time_point time_point) {
-  const std::time_t raw = std::chrono::system_clock::to_time_t(time_point);
-  std::tm local_tm{};
-#if defined(_WIN32)
-  localtime_s(&local_tm, &raw);
-#else
-  localtime_r(&raw, &local_tm);
-#endif
-  std::ostringstream out;
-  out << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
-  return out.str();
-}
-
-std::string join_argv(const std::vector<std::string>& argv) {
-  std::ostringstream out;
-  for (std::size_t i = 0; i < argv.size(); ++i) {
-    if (i != 0) {
-      out << ' ';
-    }
-    out << argv[i];
-  }
-  return out.str();
-}
-
-std::string clip_text(std::string text, std::size_t limit = 240) {
-  if (text.size() <= limit) {
-    return text;
-  }
-  return text.substr(0, limit) + "...";
-}
 
 std::string editor_display_name(const std::string& editor) {
   return editor == "vscode" ? "VS Code" : editor == "vim" ? "Vim" : "Neovim";
@@ -134,88 +85,6 @@ bool open_url(ScreenInteractive& screen,
   auto attached = screen.WithRestoredIO([&] { runner.run_attached(request); });
   attached();
   return true;
-}
-
-void append_tail(std::string& target, const std::string& chunk, std::size_t limit = 4096) {
-  target.append(chunk);
-  if (target.size() > limit) {
-    target.erase(0, target.size() - limit);
-  }
-}
-
-std::vector<std::string> split_command_line(const std::string& command) {
-  std::vector<std::string> argv;
-  std::string current;
-  bool in_single = false;
-  bool in_double = false;
-  bool escaping = false;
-
-  for (char ch : command) {
-    if (escaping) {
-      current.push_back(ch);
-      escaping = false;
-      continue;
-    }
-    if (ch == '\\') {
-      escaping = true;
-      continue;
-    }
-    if (ch == '\'' && !in_double) {
-      in_single = !in_single;
-      continue;
-    }
-    if (ch == '"' && !in_single) {
-      in_double = !in_double;
-      continue;
-    }
-    if (std::isspace(static_cast<unsigned char>(ch)) && !in_single && !in_double) {
-      if (!current.empty()) {
-        argv.push_back(current);
-        current.clear();
-      }
-      continue;
-    }
-    current.push_back(ch);
-  }
-  if (!current.empty()) {
-    argv.push_back(current);
-  }
-  return argv;
-}
-
-TaskRecord make_task_record(const std::string& name, const std::vector<std::string>& argv, bool use_pty = false) {
-  TaskRecord record;
-  record.name = name;
-  record.argv = argv;
-  record.use_pty = use_pty;
-  record.command = join_argv(argv);
-  record.state = TaskState::Starting;
-  record.started_at = format_timestamp(std::chrono::system_clock::now());
-  return record;
-}
-
-TaskRecord execute_task_probe(const std::string& name,
-                              const ProcessRequest& request,
-                              const ProcessRunner& runner) {
-  auto record = make_task_record(name, request.argv);
-
-  const auto result = runner.run(request);
-
-  record.finished_at = format_timestamp(std::chrono::system_clock::now());
-  record.exit_code = result.exit_code;
-  record.stdout_excerpt = clip_text(result.stdout_text);
-  record.stderr_excerpt = clip_text(result.stderr_text);
-  record.timed_out = result.timed_out;
-  record.cancelled = result.cancelled;
-
-  if (result.cancelled) {
-    record.state = TaskState::Cancelled;
-  } else if (result.timed_out || result.exit_code != 0) {
-    record.state = TaskState::Failed;
-  } else {
-    record.state = TaskState::Exited;
-  }
-  return record;
 }
 
 struct ShellTaskController {
