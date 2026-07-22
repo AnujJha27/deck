@@ -168,7 +168,7 @@ Finance controls:
 - `A` add alert rule
 - `e` edit note for selected symbol
 
-The Finance candle chart adapts its height and displayed candle count to the terminal size, so larger terminals use the available pane space.
+The Finance candle chart adapts its height and displayed candle count to the terminal size. Its unused horizontal space is used for a focused market snapshot: latest price, change, ranges, volume, source, and active alerts.
 
 Notes controls:
 

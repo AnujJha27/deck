@@ -652,6 +652,35 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
 
   std::vector<std::string> lines;
   const auto& last = candles.back();
+  const auto quote = runtime.market_quotes.find(symbol);
+  const auto has_quote = quote != runtime.market_quotes.end() && quote->second.has_data;
+  const auto last_price = has_quote ? quote->second.last_price : last.close;
+  const auto day_change = has_quote ? quote->second.change : last.close - last.open;
+  const auto day_change_percent = has_quote && quote->second.percent_change != 0.0
+                                      ? quote->second.percent_change
+                                      : (last.open == 0.0 ? 0.0 : day_change * 100.0 / last.open);
+  const auto number = [](double value, int precision = 2) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(precision) << value;
+    return out.str();
+  };
+  std::vector<std::string> snapshot = {
+      "MARKET SNAPSHOT",
+      "Last     " + number(last_price),
+      "Day      " + std::string(day_change >= 0.0 ? "+" : "") + number(day_change) + "  (" +
+          (day_change_percent >= 0.0 ? "+" : "") + number(day_change_percent) + "%)",
+      "Session  " + number(last.low) + " — " + number(last.high),
+      "Period   " + number(observed_low) + " — " + number(observed_high),
+      "Volume   " + number(last.volume, 0),
+      "Candles  " + std::to_string(candles.size()) + " / " + std::to_string(all_candles.size()),
+      "Source   " + (has_quote ? quote->second.provider : runtime.market_data_provider),
+  };
+  const auto alert = std::find_if(runtime.triggered_alerts.begin(), runtime.triggered_alerts.end(), [&](const auto& entry) {
+    return entry.symbol == symbol;
+  });
+  if (alert != runtime.triggered_alerts.end()) {
+    snapshot.push_back("Alert    " + alert->message.substr(0, 56));
+  }
   std::ostringstream heading;
   heading << symbol << "  ·  1D  ·  " << candles.size() << " sessions   O " << std::fixed << std::setprecision(2)
           << last.open << "  H " << last.high << "  L " << last.low << "  C " << last.close;
@@ -680,6 +709,8 @@ std::vector<std::string> lines_for_portfolio(const WorkspaceRuntimeState& runtim
         chart_row << "  ";
       }
     }
+    chart_row << "  │  ";
+    if (row < snapshot.size()) chart_row << snapshot[row];
     lines.push_back(chart_row.str());
   }
   lines.push_back("          └" + std::string(candles.size() * 2, '-'));
