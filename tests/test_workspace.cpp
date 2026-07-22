@@ -34,10 +34,32 @@ DECK_TEST(workspace_default_tabs) {
   auto state = deck::make_default_workspace("/tmp/deck");
   DECK_ASSERT(state.tabs.size() == 6);
   DECK_ASSERT(state.tabs[0].name == "Dev");
+  DECK_ASSERT(state.tabs[0].focused_pane == deck::PaneKind::Files);
   DECK_ASSERT(deck::contains_pane(state.tabs[1].layout, deck::PaneKind::Tasks));
   DECK_ASSERT(state.tabs[3].role == deck::TabRole::Finance);
   DECK_ASSERT(state.tabs[4].role == deck::TabRole::Notes);
   DECK_ASSERT(state.tabs[5].role == deck::TabRole::News);
+}
+
+DECK_TEST(workspace_upgrades_untouched_dev_layout_for_file_preview) {
+  auto state = deck::make_default_workspace("/tmp/deck");
+  auto& dev = state.tabs.front();
+  dev.layout = deck::make_split(
+      deck::SplitAxis::Horizontal,
+      0.25,
+      deck::make_leaf(deck::PaneKind::Files),
+      deck::make_split(deck::SplitAxis::Vertical,
+                       0.70,
+                       deck::make_leaf(deck::PaneKind::Terminal),
+                       deck::make_split(deck::SplitAxis::Horizontal,
+                                        0.55,
+                                        deck::make_leaf(deck::PaneKind::Search),
+                                        deck::make_leaf(deck::PaneKind::Git))));
+  dev.focused_pane = deck::PaneKind::Terminal;
+  deck::ensure_workspace_tabs(state);
+  DECK_ASSERT(dev.focused_pane == deck::PaneKind::Files);
+  DECK_ASSERT(deck::serialize_split_tree(dev.layout).find("leaf(terminal)") <
+              deck::serialize_split_tree(dev.layout).find("leaf(files)"));
 }
 
 DECK_TEST(workspace_round_trip) {

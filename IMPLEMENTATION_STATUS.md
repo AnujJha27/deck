@@ -57,6 +57,7 @@ Last updated: 2026-07-17
 - Article previews preserve headings and paragraph spacing while removing common navigation and footer boilerplate.
 - Long News article previews can be paged in place with PageUp and PageDown.
 - PageUp and PageDown scroll the focused pane across long notes, scratchpads, diffs, logs, and previews.
+- The Dev workspace now prioritizes Files as the main pane, with Terminal in the sidebar; larger text-file previews can be paged in place.
 
 ## Partially implemented
 

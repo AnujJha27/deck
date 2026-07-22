@@ -235,8 +235,11 @@ void append_selected_file_preview(std::vector<std::string>& lines,
   }
   const auto path = state.root / runtime.files_browser_root / entry.path;
   std::error_code ec;
-  if (std::filesystem::file_size(path, ec) > 64 * 1024 || ec) {
-    lines.push_back("Preview unavailable: file is too large");
+  constexpr std::uintmax_t max_preview_bytes = 512 * 1024;
+  constexpr std::size_t max_preview_lines = 4000;
+  const auto file_size = std::filesystem::file_size(path, ec);
+  if (ec || file_size > max_preview_bytes) {
+    lines.push_back("Preview unavailable: file exceeds 512 KiB safety limit");
     return;
   }
   std::ifstream input(path, std::ios::binary);
@@ -249,11 +252,19 @@ void append_selected_file_preview(std::vector<std::string>& lines,
     lines.push_back("Preview unavailable: binary file");
     return;
   }
-  lines.push_back("Preview: " + entry.path);
   std::istringstream preview(content);
   std::string line;
-  for (std::size_t i = 0; i < 6 && std::getline(preview, line); ++i) {
+  std::size_t line_count = 0;
+  while (line_count < max_preview_lines && std::getline(preview, line)) {
+    if (line.size() > 480) line = line.substr(0, 480) + "…";
     lines.push_back("  " + line);
+    ++line_count;
+  }
+  lines.insert(lines.end() - static_cast<std::ptrdiff_t>(line_count),
+               "Preview: " + entry.path + "  ·  " + std::to_string(file_size) +
+                   " bytes  ·  PgUp/PgDn scroll");
+  if (std::getline(preview, line)) {
+    lines.push_back("Preview capped at 4,000 lines");
   }
 }
 

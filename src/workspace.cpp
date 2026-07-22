@@ -11,6 +11,18 @@ SplitNode dev_layout() {
   return make_split(
       SplitAxis::Horizontal,
       0.25,
+      make_leaf(PaneKind::Terminal),
+      make_split(
+          SplitAxis::Vertical,
+          0.70,
+          make_leaf(PaneKind::Files),
+          make_split(SplitAxis::Horizontal, 0.55, make_leaf(PaneKind::Search), make_leaf(PaneKind::Git))));
+}
+
+SplitNode legacy_dev_layout() {
+  return make_split(
+      SplitAxis::Horizontal,
+      0.25,
       make_leaf(PaneKind::Files),
       make_split(
           SplitAxis::Vertical,
@@ -79,7 +91,7 @@ WorkspacePersistentState make_default_workspace(const std::filesystem::path& roo
   state.name = root.filename().string().empty() ? "workspace" : root.filename().string();
   state.root = root;
   state.tabs = {
-      TabPersistentState{"Dev", TabRole::Dev, dev_layout(), PaneKind::Terminal},
+      TabPersistentState{"Dev", TabRole::Dev, dev_layout(), PaneKind::Files},
       TabPersistentState{"Run", TabRole::Run, run_layout(), PaneKind::Terminal},
       TabPersistentState{"Review", TabRole::Review, review_layout(), PaneKind::Git},
       TabPersistentState{"Finance", TabRole::Finance, finance_layout(), PaneKind::Markets},
@@ -101,7 +113,12 @@ void ensure_workspace_tabs(WorkspacePersistentState& state) {
     }
   }
   const auto old_news_layout = serialize_split_tree(news_layout_with_feed_ratio(0.62));
+  const auto old_dev_layout = serialize_split_tree(legacy_dev_layout());
   for (auto& tab : state.tabs) {
+    if (tab.role == TabRole::Dev && serialize_split_tree(tab.layout) == old_dev_layout) {
+      tab.layout = dev_layout();
+      if (tab.focused_pane == PaneKind::Terminal) tab.focused_pane = PaneKind::Files;
+    }
     if (tab.role == TabRole::News && serialize_split_tree(tab.layout) == old_news_layout) {
       tab.layout = news_layout();
     }

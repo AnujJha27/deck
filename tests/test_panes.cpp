@@ -122,10 +122,31 @@ DECK_TEST(file_browser_includes_selected_text_preview) {
   runtime.files_entries = {{"example.txt", false}};
   auto snapshot = deck::build_pane_data_snapshot(state, runtime, {});
 
-  DECK_ASSERT(std::find(snapshot.files_lines.begin(), snapshot.files_lines.end(), "Preview: example.txt") !=
-              snapshot.files_lines.end());
+  DECK_ASSERT(std::any_of(snapshot.files_lines.begin(), snapshot.files_lines.end(), [](const std::string& line) {
+    return line.starts_with("Preview: example.txt") && line.find("PgUp/PgDn scroll") != std::string::npos;
+  }));
   DECK_ASSERT(std::find(snapshot.files_lines.begin(), snapshot.files_lines.end(), "  first preview line") !=
               snapshot.files_lines.end());
+
+  deck::invalidate_pane_data_snapshot(root);
+  std::filesystem::remove_all(root);
+}
+
+DECK_TEST(file_browser_keeps_large_source_preview_lines_for_scrolling) {
+  const auto root = std::filesystem::temp_directory_path() / "deck_large_file_preview_test";
+  std::filesystem::create_directories(root);
+  {
+    std::ofstream output(root / "app.cpp");
+    for (int i = 0; i < 300; ++i) output << "source line " << i << "\n";
+  }
+
+  auto state = deck::make_default_workspace(root);
+  deck::WorkspaceRuntimeState runtime;
+  runtime.files_entries = {{"app.cpp", false}};
+  const auto snapshot = deck::build_pane_data_snapshot(state, runtime, {});
+  DECK_ASSERT(std::any_of(snapshot.files_lines.begin(), snapshot.files_lines.end(), [](const std::string& line) {
+    return line.find("source line 299") != std::string::npos;
+  }));
 
   deck::invalidate_pane_data_snapshot(root);
   std::filesystem::remove_all(root);
