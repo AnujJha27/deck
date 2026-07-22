@@ -11,8 +11,16 @@
 
 namespace deck {
 
+enum class SyntaxStyle { Plain, Keyword, String, Comment, Number, Name, Punctuation };
+
+struct SyntaxSpan {
+  std::string text;
+  SyntaxStyle style = SyntaxStyle::Plain;
+};
+
 struct PaneDataSnapshot {
   std::vector<std::string> files_lines;
+  std::vector<std::optional<std::vector<SyntaxSpan>>> files_highlight_lines;
   std::vector<std::string> terminal_lines;
   std::vector<std::string> search_lines;
   std::vector<std::string> git_lines;

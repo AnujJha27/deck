@@ -193,6 +193,8 @@ Hacker News text posts appear in Preview immediately. External article text is f
 
 The Files pane can scroll through selected text files up to 512 KiB, including larger source files. Binary files and files beyond that safety limit are identified without loading their contents.
 
+When `pygmentize` from Pygments is installed, File Preview uses its language-aware token stream for syntax colors in C++, Python, JavaScript/TypeScript, JSON, shell, CMake, and Markdown. It remains a plain readable preview when Pygments is unavailable.
+
 ## Workspace files
 
 `deck` stores local workspace state under `.deck/`:

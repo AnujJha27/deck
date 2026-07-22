@@ -59,6 +59,7 @@ Last updated: 2026-07-17
 - PageUp and PageDown scroll the focused pane across long notes, scratchpads, diffs, logs, and previews.
 - The Dev workspace now prioritizes Files as the main pane, with Terminal in the sidebar; larger text-file previews can be paged in place.
 - Shared command parsing, task-record creation, and output-buffer helpers now live outside the fullscreen UI implementation.
+- File Preview can use an optional Pygments token stream for language-aware syntax color without embedding a custom parser stack.
 
 ## Partially implemented
 

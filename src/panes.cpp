@@ -20,6 +20,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -223,7 +224,82 @@ std::vector<std::string> lines_for_files(const WorkspacePersistentState& state, 
   };
 }
 
+std::optional<std::string> pygments_lexer_for(const std::filesystem::path& path) {
+  const auto extension = path.extension().string();
+  if (extension == ".cpp" || extension == ".cc" || extension == ".cxx" || extension == ".h" || extension == ".hpp") return "cpp";
+  if (extension == ".py") return "python";
+  if (extension == ".js" || extension == ".mjs") return "javascript";
+  if (extension == ".ts") return "typescript";
+  if (extension == ".json") return "json";
+  if (extension == ".sh" || extension == ".bash") return "bash";
+  if (extension == ".cmake") return "cmake";
+  if (extension == ".md") return "markdown";
+  return std::nullopt;
+}
+
+SyntaxStyle syntax_style_for(std::string_view token) {
+  if (token.find("Comment") != std::string_view::npos) return SyntaxStyle::Comment;
+  if (token.find("String") != std::string_view::npos) return SyntaxStyle::String;
+  if (token.find("Number") != std::string_view::npos) return SyntaxStyle::Number;
+  if (token.find("Keyword") != std::string_view::npos) return SyntaxStyle::Keyword;
+  if (token.find("Name") != std::string_view::npos) return SyntaxStyle::Name;
+  if (token.find("Operator") != std::string_view::npos || token.find("Punctuation") != std::string_view::npos) {
+    return SyntaxStyle::Punctuation;
+  }
+  return SyntaxStyle::Plain;
+}
+
+std::string decode_pygments_repr(std::string_view value) {
+  if (value.size() < 2) return {};
+  std::string decoded;
+  for (std::size_t index = 1; index + 1 < value.size(); ++index) {
+    const auto ch = value[index];
+    if (ch != '\\' || index + 2 >= value.size()) {
+      decoded.push_back(ch);
+      continue;
+    }
+    const auto escaped = value[++index];
+    if (escaped == 'n') decoded.push_back('\n');
+    else if (escaped == 'r') decoded.push_back('\r');
+    else if (escaped == 't') decoded.push_back('\t');
+    else decoded.push_back(escaped);
+  }
+  return decoded;
+}
+
+std::vector<std::vector<SyntaxSpan>> pygments_highlight(const std::filesystem::path& path,
+                                                         const std::string& source) {
+  const auto lexer = pygments_lexer_for(path);
+  if (!lexer) return {};
+  ProcessRequest request;
+  request.argv = {"pygmentize", "-f", "raw", "-l", *lexer};
+  request.stdin_text = source;
+  request.timeout = std::chrono::milliseconds(1200);
+  const auto result = ProcessRunner{}.run(request);
+  if (result.exit_code != 0 || result.timed_out) return {};
+
+  std::vector<std::vector<SyntaxSpan>> lines(1);
+  std::istringstream raw(result.stdout_text);
+  for (std::string raw_line; std::getline(raw, raw_line);) {
+    const auto tab = raw_line.find('\t');
+    if (tab == std::string::npos) continue;
+    const auto style = syntax_style_for(raw_line.substr(0, tab));
+    const auto token = decode_pygments_repr(raw_line.substr(tab + 1));
+    std::size_t cursor = 0;
+    while (cursor <= token.size()) {
+      const auto newline = token.find('\n', cursor);
+      const auto part = token.substr(cursor, newline - cursor);
+      if (!part.empty()) lines.back().push_back({part, style});
+      if (newline == std::string::npos) break;
+      lines.push_back({});
+      cursor = newline + 1;
+    }
+  }
+  return lines;
+}
+
 void append_selected_file_preview(std::vector<std::string>& lines,
+                                  std::vector<std::optional<std::vector<SyntaxSpan>>>& highlights,
                                   const WorkspacePersistentState& state,
                                   const WorkspaceRuntimeState& runtime) {
   if (runtime.files_entries.empty() || runtime.selected_file_index >= runtime.files_entries.size()) {
@@ -240,31 +316,41 @@ void append_selected_file_preview(std::vector<std::string>& lines,
   const auto file_size = std::filesystem::file_size(path, ec);
   if (ec || file_size > max_preview_bytes) {
     lines.push_back("Preview unavailable: file exceeds 512 KiB safety limit");
+    highlights.push_back(std::nullopt);
     return;
   }
   std::ifstream input(path, std::ios::binary);
   if (!input) {
     lines.push_back("Preview unavailable: cannot read " + entry.path);
+    highlights.push_back(std::nullopt);
     return;
   }
   std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
   if (content.find('\0') != std::string::npos) {
     lines.push_back("Preview unavailable: binary file");
+    highlights.push_back(std::nullopt);
     return;
   }
+  const auto syntax_lines = pygments_highlight(path, content);
   std::istringstream preview(content);
   std::string line;
   std::size_t line_count = 0;
   while (line_count < max_preview_lines && std::getline(preview, line)) {
+    const auto highlighted = line_count < syntax_lines.size() && line.size() <= 480
+                                 ? std::optional<std::vector<SyntaxSpan>>(syntax_lines[line_count])
+                                 : std::nullopt;
     if (line.size() > 480) line = line.substr(0, 480) + "…";
     lines.push_back("  " + line);
+    highlights.push_back(std::move(highlighted));
     ++line_count;
   }
-  lines.insert(lines.end() - static_cast<std::ptrdiff_t>(line_count),
-               "Preview: " + entry.path + "  ·  " + std::to_string(file_size) +
-                   " bytes  ·  PgUp/PgDn scroll");
+  const auto preview_at = lines.end() - static_cast<std::ptrdiff_t>(line_count);
+  lines.insert(preview_at, "Preview: " + entry.path + "  ·  " + std::to_string(file_size) +
+                               " bytes  ·  PgUp/PgDn scroll");
+  highlights.insert(highlights.end() - static_cast<std::ptrdiff_t>(line_count), std::nullopt);
   if (std::getline(preview, line)) {
     lines.push_back("Preview capped at 4,000 lines");
+    highlights.push_back(std::nullopt);
   }
 }
 
@@ -977,18 +1063,56 @@ Element styled_pane_row(PaneKind kind, const std::string& line) {
   return row;
 }
 
+Element styled_syntax_line(const std::vector<SyntaxSpan>& spans) {
+  Elements elements;
+  elements.push_back(text("  "));
+  for (const auto& span : spans) {
+    auto element = text(span.text);
+    switch (span.style) {
+      case SyntaxStyle::Keyword:
+        element = element | color(Color::Magenta);
+        break;
+      case SyntaxStyle::String:
+        element = element | color(Color::Green);
+        break;
+      case SyntaxStyle::Comment:
+        element = element | dim | color(Color::GrayDark);
+        break;
+      case SyntaxStyle::Number:
+        element = element | color(Color::Yellow);
+        break;
+      case SyntaxStyle::Name:
+        element = element | color(Color::Cyan);
+        break;
+      case SyntaxStyle::Punctuation:
+        element = element | dim;
+        break;
+      case SyntaxStyle::Plain:
+        break;
+    }
+    elements.push_back(std::move(element));
+  }
+  return hbox(std::move(elements));
+}
+
 class StaticPane final : public Pane {
  public:
   StaticPane(PaneKind id,
              std::string title,
              std::vector<std::string> lines,
+             std::vector<std::optional<std::vector<SyntaxSpan>>> highlights,
              PaneStatus status,
              bool focused)
-      : id_(id), title_(std::move(title)), lines_(std::move(lines)), status_(status), focused_(focused) {
+      : id_(id), title_(std::move(title)), lines_(std::move(lines)), highlights_(std::move(highlights)),
+        status_(status), focused_(focused) {
     component_ = Renderer([this] {
       Elements rows;
-      for (const auto& line : lines_) {
-        rows.push_back(styled_pane_row(id_, line));
+      for (std::size_t index = 0; index < lines_.size(); ++index) {
+        if (id_ == PaneKind::Files && index < highlights_.size() && highlights_[index]) {
+          rows.push_back(styled_syntax_line(*highlights_[index]));
+        } else {
+          rows.push_back(styled_pane_row(id_, lines_[index]));
+        }
       }
       if (rows.empty()) {
         rows.push_back(text("No data"));
@@ -1013,6 +1137,7 @@ class StaticPane final : public Pane {
   PaneKind id_;
   std::string title_;
   std::vector<std::string> lines_;
+  std::vector<std::optional<std::vector<SyntaxSpan>>> highlights_;
   PaneStatus status_;
   bool focused_ = false;
   Component component_;
@@ -1152,7 +1277,8 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
           const auto prefix = i == runtime.selected_file_index ? "> " : "  ";
           snapshot.files_lines.push_back(prefix + entry.path + (entry.is_directory ? "/" : ""));
         }
-        append_selected_file_preview(snapshot.files_lines, state, runtime);
+        snapshot.files_highlight_lines.assign(snapshot.files_lines.size(), std::nullopt);
+        append_selected_file_preview(snapshot.files_lines, snapshot.files_highlight_lines, state, runtime);
       }
       snapshot.terminal_lines = lines_for_terminal(state, runtime);
       if (!runtime.current_search_query.empty()) {
@@ -1232,7 +1358,8 @@ PaneDataSnapshot build_pane_data_snapshot(const WorkspacePersistentState& state,
       const auto prefix = i == runtime.selected_file_index ? "> " : "  ";
       snapshot.files_lines.push_back(prefix + entry.path + (entry.is_directory ? "/" : ""));
     }
-    append_selected_file_preview(snapshot.files_lines, state, runtime);
+    snapshot.files_highlight_lines.assign(snapshot.files_lines.size(), std::nullopt);
+    append_selected_file_preview(snapshot.files_lines, snapshot.files_highlight_lines, state, runtime);
   }
   snapshot.terminal_lines = lines_for_terminal(state, runtime);
   snapshot.search_lines = lines_for_search(files, caps);
@@ -1343,17 +1470,24 @@ std::unique_ptr<Pane> make_static_pane(PaneKind kind,
   const bool focused = runtime.visible_tab < state.tabs.size() &&
                        state.tabs[runtime.visible_tab].focused_pane == kind;
   auto lines = lines_for_pane(kind, snapshot);
+  auto highlights = kind == PaneKind::Files ? snapshot.files_highlight_lines
+                                            : std::vector<std::optional<std::vector<SyntaxSpan>>>{};
   if (kind != PaneKind::NewsPreview) {
     const auto found = runtime.pane_scroll_offsets.find(kind);
     const auto requested = found == runtime.pane_scroll_offsets.end() ? 0 : found->second;
     const auto start = std::min(requested, lines.size() > 1 ? lines.size() - 1 : std::size_t{0});
     if (start > 0) {
       lines.erase(lines.begin(), lines.begin() + static_cast<std::ptrdiff_t>(start));
+      if (start < highlights.size()) {
+        highlights.erase(highlights.begin(), highlights.begin() + static_cast<std::ptrdiff_t>(start));
+      } else {
+        highlights.clear();
+      }
       title += " · line " + std::to_string(start + 1);
     }
   }
   return std::make_unique<StaticPane>(
-      kind, title, std::move(lines), status_for_pane(kind, caps), focused);
+      kind, title, std::move(lines), std::move(highlights), status_for_pane(kind, caps), focused);
 }
 
 }  // namespace deck

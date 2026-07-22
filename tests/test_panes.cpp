@@ -127,6 +127,7 @@ DECK_TEST(file_browser_includes_selected_text_preview) {
   }));
   DECK_ASSERT(std::find(snapshot.files_lines.begin(), snapshot.files_lines.end(), "  first preview line") !=
               snapshot.files_lines.end());
+  DECK_ASSERT(snapshot.files_highlight_lines.size() == snapshot.files_lines.size());
 
   deck::invalidate_pane_data_snapshot(root);
   std::filesystem::remove_all(root);
